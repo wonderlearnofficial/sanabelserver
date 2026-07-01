@@ -9,8 +9,8 @@ import Representative from "../models/representative.model";
 import Class from "../models/class.model";
 import Organization from "../models/oraganization.model";
 import bcrypt from "bcryptjs";
-import nodemailer from "nodemailer";
 import generateOTP from "../helpers/generateOtp";
+import { sendEmail } from "../helpers/sendEmail";
 import StudentTask from "../models/student-task.model"; // Import the StudentTask model
 import Task from "../models/task.model"; // Import the Task model
 import Challenge from "../models/challenge.model";
@@ -250,24 +250,11 @@ const sendOTP = async (req: Request, res: Response) => {
     await user.update({ resetOTP: otp, otpExpiry });
 
     // Send OTP to user via email
-    const transporter = nodemailer.createTransport({
-      host: process.env.MAIL_HOST, // e.g., 'smtp.gmail.com' for Gmail, or your SMTP server
-      port: Number(process.env.MAIL_PORT) || 587, // Default to 587 for non-secure, 465 for secure
-      secure: false, // `true` for port 465, `false` for other ports
-      auth: {
-        user: process.env.MAIL_USERNAME, // Email username
-        pass: process.env.MAIL_PASSWORD, // Email password
-      },
-    });
-
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    await sendEmail({
       to: email,
       subject: "Your OTP Code for Password Reset",
       text: `Your OTP code is ${otp}. It is valid for 5 minutes.`,
-    };
-
-    await transporter.sendMail(mailOptions);
+    });
 
     return res.status(200).json({
       status: 200,

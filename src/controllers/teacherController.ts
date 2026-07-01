@@ -21,7 +21,7 @@ import ExcelJS from "exceljs";
 import bcrypt from "bcryptjs";
 import path from "path";
 import fs from "fs";
-import nodemailer from "nodemailer";
+import { sendEmail } from "../helpers/sendEmail";
 import { generatePassword } from "../helpers/generatePassword";
 
 declare global {
@@ -840,18 +840,7 @@ const addTeacher = async (req: Request, res: Response) => {
             );
           }
 
-          const transporter = nodemailer.createTransport({
-            host: process.env.MAIL_HOST,
-            port: Number(process.env.MAIL_PORT) || 587,
-            secure: false,
-            auth: {
-              user: process.env.MAIL_USERNAME,
-              pass: process.env.MAIL_PASSWORD,
-            },
-          });
-
-          await transporter.sendMail({
-            from: process.env.EMAIL_USER,
+          await sendEmail({
             to: email,
             subject: "Your Teacher Account in Snabel elahssan",
             text: `Hello ${firstName},\n\nYour teacher account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nPlease log in and change your password immediately.`,

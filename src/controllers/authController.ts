@@ -3,8 +3,8 @@ import User from "../models/user.model";
 import logger from "../config/logger";
 
 
-import nodemailer from "nodemailer";
 import generateOTP from "../helpers/generateOtp";
+import { sendEmail } from "../helpers/sendEmail";
 
 const sendOtp = async (req: Request, res: Response) => {
   const { email } = req.body;
@@ -23,15 +23,6 @@ const sendOtp = async (req: Request, res: Response) => {
     }
     const otp = generateOTP();
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
-    const transporter = nodemailer.createTransport({
-      host: process.env.MAIL_HOST, // e.g., 'smtp.gmail.com' for Gmail, or your SMTP server
-      port: Number(process.env.MAIL_PORT) || 587, // Default to 587 for non-secure, 465 for secure
-      secure: false, // `true` for port 465, `false` for other ports
-      auth: {
-        user: process.env.MAIL_USERNAME, // Email username
-        pass: process.env.MAIL_PASSWORD, // Email password
-      },
-    });
 
     if (existingUser && !existingUser.isAccess) {
       await existingUser.update({
@@ -39,14 +30,11 @@ const sendOtp = async (req: Request, res: Response) => {
         otpExpiry,
       });
 
-      const mailOptions = {
-        from: process.env.EMAIL_USER,
+      await sendEmail({
         to: email,
         subject: "Your OTP Code for Access you account",
         text: `Your OTP code is ${otp}. It is valid for 5 minutes.`,
-      };
-
-      await transporter.sendMail(mailOptions);
+      });
 
       return res.status(200).json({
         status: 200,
@@ -54,24 +42,24 @@ const sendOtp = async (req: Request, res: Response) => {
       });
     }
 
-    const newOtp = await User.create({
+    await User.create({
       email,
       resetOTP: otp,
       otpExpiry,
     });
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+
+    await sendEmail({
       to: email,
       subject: "Your OTP Code for Access you account",
       text: `Your OTP code is ${otp}. It is valid for 5 minutes.`,
-    };
-    await transporter.sendMail(mailOptions);
+    });
 
     return res.status(200).json({
       status: 200,
       message: "OTP sent successfully to your email.",
     });
   } catch (error) {
+    logger.error("Error sending OTP:", { error, email });
     return res.status(500).json({
       status: 500,
       error: error,

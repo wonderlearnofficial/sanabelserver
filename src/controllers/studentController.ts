@@ -12,7 +12,7 @@ import Challenge from "../models/challenge.model";
 import Organization from "../models/oraganization.model";
 import Class from "../models/class.model";
 import { generatePassword } from "../helpers/generatePassword";
-import nodemailer from "nodemailer";
+import { sendEmail } from "../helpers/sendEmail";
 import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
@@ -1298,24 +1298,11 @@ const addStudent = async (req: Request, res: Response) => {
           });
 
           // ✅ Send Email with Credentials
-          const transporter = nodemailer.createTransport({
-            host: process.env.MAIL_HOST,
-            port: Number(process.env.MAIL_PORT) || 587,
-            secure: false,
-            auth: {
-              user: process.env.MAIL_USERNAME,
-              pass: process.env.MAIL_PASSWORD,
-            },
-          });
-
-          const mailOptions = {
-            from: process.env.EMAIL_USER,
+          await sendEmail({
             to: email,
             subject: "Your account in Snabel elahssan",
             text: `Your email code is ${email}, and your password is ${password}`,
-          };
-
-          await transporter.sendMail(mailOptions);
+          });
 
           // ✅ Assign Tasks & Challenges After Email
           const allChallenges = await Challenge.findAll();
