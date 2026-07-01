@@ -3186,3 +3186,57 @@
 {"duration":3,"level":"info","message":"<-- GET /admin/organizations?limit=1000 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T16:16:53.224Z","url":"/admin/organizations?limit=1000"}
 {"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/students?page=1&limit=20","timestamp":"2026-07-01T16:16:53.494Z"}
 {"duration":4,"level":"info","message":"<-- GET /admin/students?page=1&limit=20 304 4ms","method":"GET","status":304,"timestamp":"2026-07-01T16:16:53.498Z","url":"/admin/students?page=1&limit=20"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T16:48:25.183Z"}
+{"duration":11,"level":"info","message":"<-- GET /admin/me 304 11ms","method":"GET","status":304,"timestamp":"2026-07-01T16:48:25.194Z","url":"/admin/me"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T16:48:25.199Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/me 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T16:48:25.201Z","url":"/admin/me"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T16:48:45.119Z"}
+{"duration":76,"level":"info","message":"<-- PATCH /users/login 200 76ms","method":"PATCH","status":200,"timestamp":"2026-07-01T16:48:45.195Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T16:48:45.211Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/data 200 3ms","method":"GET","status":200,"timestamp":"2026-07-01T16:48:45.214Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T16:48:45.222Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/data 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T16:48:45.225Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/task-count-sucess","timestamp":"2026-07-01T16:48:49.273Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/task-count-sucess","timestamp":"2026-07-01T16:48:49.275Z"}
+{"duration":6,"level":"warn","message":"<-- GET /students/task-count-sucess 404 6ms","method":"GET","status":404,"timestamp":"2026-07-01T16:48:49.279Z","url":"/students/task-count-sucess"}
+{"duration":5,"level":"warn","message":"<-- GET /students/task-count-sucess 404 5ms","method":"GET","status":404,"timestamp":"2026-07-01T16:48:49.280Z","url":"/students/task-count-sucess"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/tasks-category","timestamp":"2026-07-01T16:49:41.851Z"}
+{"duration":8,"level":"info","message":"<-- GET /students/tasks-category 304 8ms","method":"GET","status":304,"timestamp":"2026-07-01T16:49:41.859Z","url":"/students/tasks-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/tasks-category","timestamp":"2026-07-01T16:49:41.864Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/tasks-category 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T16:49:41.867Z","url":"/students/tasks-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/appear-Leaderboard","timestamp":"2026-07-01T16:49:42.644Z"}
+{"duration":34,"level":"info","message":"<-- GET /students/appear-Leaderboard 304 34ms","method":"GET","status":304,"timestamp":"2026-07-01T16:49:42.678Z","url":"/students/appear-Leaderboard"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/appear-Leaderboard","timestamp":"2026-07-01T16:49:42.686Z"}
+{"duration":5,"level":"info","message":"<-- GET /students/appear-Leaderboard 304 5ms","method":"GET","status":304,"timestamp":"2026-07-01T16:49:42.691Z","url":"/students/appear-Leaderboard"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T16:49:43.010Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T16:49:43.013Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T16:49:43.018Z"}
+{"duration":2,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T16:49:43.020Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T16:49:43.411Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T16:49:43.412Z"}
+{"duration":5,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 5ms","method":"GET","status":304,"timestamp":"2026-07-01T16:49:43.416Z","url":"/students/calculate-completed-tasks-by-category"}
+{"duration":6,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 200 6ms","method":"GET","status":200,"timestamp":"2026-07-01T16:49:43.418Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T17:07:07.914Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T17:07:07.916Z"}
+{"duration":9,"level":"info","message":"<-- GET /students/data 200 9ms","method":"GET","status":200,"timestamp":"2026-07-01T17:07:07.923Z","url":"/students/data"}
+{"duration":7,"level":"info","message":"<-- GET /students/data 304 7ms","method":"GET","status":304,"timestamp":"2026-07-01T17:07:07.923Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T17:07:07.941Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T17:07:07.942Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 200 3ms","method":"GET","status":200,"timestamp":"2026-07-01T17:07:07.944Z","url":"/students/calculate-completed-tasks-by-category"}
+{"duration":3,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T17:07:07.945Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T17:10:34.139Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T17:10:34.142Z"}
+{"duration":12,"level":"info","message":"<-- GET /students/data 304 12ms","method":"GET","status":304,"timestamp":"2026-07-01T17:10:34.151Z","url":"/students/data"}
+{"duration":10,"level":"info","message":"<-- GET /students/data 200 10ms","method":"GET","status":200,"timestamp":"2026-07-01T17:10:34.152Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T17:10:34.167Z"}
+{"duration":4,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 4ms","method":"GET","status":304,"timestamp":"2026-07-01T17:10:34.171Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T17:10:34.174Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T17:10:34.177Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T17:13:19.949Z"}
+{"duration":9,"level":"info","message":"<-- GET /students/data 304 9ms","method":"GET","status":304,"timestamp":"2026-07-01T17:13:19.958Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T17:13:19.963Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/data 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T17:13:19.966Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T17:13:19.977Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T17:13:19.978Z"}
+{"duration":6,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 6ms","method":"GET","status":304,"timestamp":"2026-07-01T17:13:19.983Z","url":"/students/calculate-completed-tasks-by-category"}
+{"duration":6,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 200 6ms","method":"GET","status":200,"timestamp":"2026-07-01T17:13:19.984Z","url":"/students/calculate-completed-tasks-by-category"}
