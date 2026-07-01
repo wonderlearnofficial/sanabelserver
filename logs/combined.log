@@ -3240,3 +3240,23 @@
 {"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T17:13:19.978Z"}
 {"duration":6,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 6ms","method":"GET","status":304,"timestamp":"2026-07-01T17:13:19.983Z","url":"/students/calculate-completed-tasks-by-category"}
 {"duration":6,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 200 6ms","method":"GET","status":200,"timestamp":"2026-07-01T17:13:19.984Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T17:14:17.217Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T17:14:17.219Z"}
+{"duration":7,"level":"info","message":"<-- GET /students/data 304 7ms","method":"GET","status":304,"timestamp":"2026-07-01T17:14:17.224Z","url":"/students/data"}
+{"duration":6,"level":"info","message":"<-- GET /students/data 200 6ms","method":"GET","status":200,"timestamp":"2026-07-01T17:14:17.225Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T17:14:17.249Z"}
+{"duration":4,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 4ms","method":"GET","status":304,"timestamp":"2026-07-01T17:14:17.253Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T17:14:17.256Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T17:14:17.259Z","url":"/students/calculate-completed-tasks-by-category"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T17:17:39.381Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T17:17:43.499Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T17:17:43.499Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T17:17:43.588Z"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T17:19:42.053Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T17:19:42.058Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T20:42:15.579Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T20:42:17.556Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T20:42:17.557Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T20:42:17.605Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /","timestamp":"2026-07-01T20:42:33.813Z"}
+{"duration":2,"level":"info","message":"<-- GET / 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T20:42:33.815Z","url":"/"}
