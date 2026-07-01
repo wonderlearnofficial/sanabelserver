@@ -1,0 +1,12 @@
+{"error":{"name":"SequelizeAccessDeniedError"},"level":"error","message":"❌ Database connection error:","timestamp":"2026-07-01T09:20:43.313Z"}
+{"error":{"name":"SequelizeDatabaseError","parameters":{},"sql":"ALTER TABLE `Parents` CHANGE `createdAt` `createdAt` DATETIME(6) NOT NULL;"},"level":"error","message":"Unable to connect to the database schema:","timestamp":"2026-07-01T10:45:55.013Z"}
+{"error":{"name":"SequelizeDatabaseError","parameters":{},"sql":"ALTER TABLE `Teachers` CHANGE `createdAt` `createdAt` DATETIME(6) NOT NULL;"},"level":"error","message":"Unable to connect to the database schema:","timestamp":"2026-07-01T13:33:04.929Z"}
+{"error":{"name":"SequelizeDatabaseError","parameters":{},"sql":"ALTER TABLE `Parents` CHANGE `createdAt` `createdAt` DATETIME(6) NOT NULL;"},"level":"error","message":"Unable to connect to the database schema:","timestamp":"2026-07-01T13:40:33.553Z"}
+{"duration":1375,"level":"error","message":"<-- POST /users/send-auth 500 1375ms","method":"POST","status":500,"timestamp":"2026-07-01T13:40:40.104Z","url":"/users/send-auth"}
+{"duration":1454,"level":"error","message":"<-- POST /users/send-auth 500 1454ms","method":"POST","status":500,"timestamp":"2026-07-01T13:40:46.603Z","url":"/users/send-auth"}
+{"duration":1397,"level":"error","message":"<-- POST /users/send-auth 500 1397ms","method":"POST","status":500,"timestamp":"2026-07-01T13:40:57.728Z","url":"/users/send-auth"}
+{"duration":31,"level":"error","message":"<-- POST /users/send-auth 500 31ms","method":"POST","status":500,"timestamp":"2026-07-01T13:43:37.913Z","url":"/users/send-auth"}
+{"duration":18,"level":"error","message":"<-- POST /users/send-auth 500 18ms","method":"POST","status":500,"timestamp":"2026-07-01T13:43:38.847Z","url":"/users/send-auth"}
+{"duration":1047,"level":"error","message":"<-- POST /users/send-auth 500 1047ms","method":"POST","status":500,"timestamp":"2026-07-01T13:43:51.758Z","url":"/users/send-auth"}
+{"duration":6,"level":"error","message":"<-- POST /users/send-auth 500 6ms","method":"POST","status":500,"timestamp":"2026-07-01T13:44:09.014Z","url":"/users/send-auth"}
+{"error":{"name":"SequelizeDatabaseError","parameters":{},"sql":"ALTER TABLE `Parents` CHANGE `createdAt` `createdAt` DATETIME(6) NOT NULL;"},"level":"error","message":"Unable to connect to the database schema:","timestamp":"2026-07-01T14:13:17.159Z"}
