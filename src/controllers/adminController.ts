@@ -697,6 +697,255 @@ const createUser = async (req: Request, res: Response) => {
   }
 };
 
+// Generic update: works for any role. Student/Teacher get their extra
+// role-specific fields applied too when the target user has that role.
+const updateUser = async (req: Request, res: Response) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!userId) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+
+    const { firstName, lastName, email, organizationId, classId, grade } = req.body;
+
+    const userRecord = await User.findByPk(userId);
+    if (!userRecord) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    const userUpdateData: Record<string, any> = {};
+    if (firstName) userUpdateData.firstName = firstName;
+    if (lastName !== undefined) userUpdateData.lastName = lastName;
+    if (email) userUpdateData.email = email;
+
+    if (userRecord.role === "Student") {
+      const student = await Student.findOne({ where: { userId } });
+      if (!student) {
+        return res.status(404).json({ message: "Student record not found for this user" });
+      }
+
+      const resultingOrganizationId =
+        organizationId !== undefined ? Number(organizationId) : student.organizationId;
+
+      if (organizationId !== undefined) {
+        const organization = await Organization.findByPk(resultingOrganizationId);
+        if (!organization) {
+          return res.status(400).json({ message: "Target organization does not exist" });
+        }
+      }
+
+      if (classId !== undefined && classId !== "" && classId !== null) {
+        const targetClass = await Class.findByPk(Number(classId));
+        if (!targetClass) {
+          return res.status(400).json({ message: "Target class does not exist" });
+        }
+        if (targetClass.organizationId !== resultingOrganizationId) {
+          return res.status(400).json({ message: "Target class does not belong to the selected organization" });
+        }
+      }
+
+      const studentUpdateData: Record<string, any> = {};
+      if (grade) studentUpdateData.grade = grade;
+      if (organizationId !== undefined) studentUpdateData.organizationId = resultingOrganizationId;
+      if (classId !== undefined) studentUpdateData.classId = classId === "" ? null : Number(classId);
+
+      if (Object.keys(studentUpdateData).length > 0) {
+        await student.update(studentUpdateData);
+      }
+    } else if (userRecord.role === "Teacher" && organizationId !== undefined) {
+      const teacher = await Teacher.findOne({ where: { userId } });
+      if (!teacher) {
+        return res.status(404).json({ message: "Teacher record not found for this user" });
+      }
+      const organization = await Organization.findByPk(Number(organizationId));
+      if (!organization) {
+        return res.status(400).json({ message: "Target organization does not exist" });
+      }
+      await teacher.update({ organizationId: organization.id });
+    }
+
+    if (Object.keys(userUpdateData).length > 0) {
+      await userRecord.update(userUpdateData);
+    }
+
+    return res.status(200).json({ message: "User updated successfully" });
+  } catch (error) {
+    logger.error("Error in updateUser:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// Generic delete: works for any role, cascading whatever child rows that
+// role owns. Keyed by userId so every admin tab (Users/Students/Teachers/
+// Parents/Admins) can use the same endpoint regardless of its list shape.
+const deleteUser = async (req: Request, res: Response) => {
+  try {
+    const userId = Number(req.params.userId);
+    if (!userId) {
+      return res.status(400).json({ message: "Invalid user id" });
+    }
+
+    const userRecord = await User.findByPk(userId);
+    if (!userRecord) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
+    if (userRecord.role === "Student") {
+      const student = await Student.findOne({ where: { userId } });
+      if (student) {
+        await StudentTask.destroy({ where: { studentId: student.id } });
+        await StudentChallenge.destroy({ where: { studentId: student.id } });
+        await student.destroy();
+      }
+    } else if (userRecord.role === "Teacher") {
+      await Teacher.destroy({ where: { userId } });
+    } else if (userRecord.role === "Parent") {
+      const parent = await Parent.findOne({ where: { userId } });
+      if (parent) {
+        await Student.update({ ParentId: null } as any, { where: { ParentId: parent.id } });
+        await parent.destroy();
+      }
+    }
+
+    await userRecord.destroy();
+
+    return res.status(200).json({ message: "User deleted successfully" });
+  } catch (error) {
+    logger.error("Error in deleteUser:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Classes
+// ---------------------------------------------------------------------------
+
+const listClasses = async (req: Request, res: Response) => {
+  try {
+    const { search, organizationId, page = "1", limit = "20" } = req.query;
+
+    const where: any = {};
+    if (organizationId) where.organizationId = organizationId;
+    if (search) where.classname = { [Op.like]: `%${String(search)}%` };
+
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 20;
+    const offset = (pageNum - 1) * limitNum;
+
+    const { rows, count } = await Class.findAndCountAll({
+      where,
+      limit: limitNum,
+      offset,
+      order: [["id", "ASC"]],
+      distinct: true,
+      include: [
+        { model: Organization, as: "Organization", attributes: ["id", "name"], required: false },
+        { model: Teacher, as: "Teachers", attributes: ["id", "userId"], required: false },
+        { model: Student, as: "Students", attributes: ["id"], required: false },
+      ],
+    });
+
+    return res.status(200).json({ data: rows, total: count, page: pageNum, limit: limitNum });
+  } catch (error) {
+    logger.error("Error in listClasses:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const createClass = async (req: Request, res: Response) => {
+  try {
+    const { classname, category, organizationId, classdescrption } = req.body;
+
+    if (!classname || !category || !organizationId) {
+      return res.status(400).json({ message: "classname, category and organizationId are required" });
+    }
+
+    const organization = await Organization.findByPk(Number(organizationId));
+    if (!organization) {
+      return res.status(400).json({ message: "Target organization does not exist" });
+    }
+
+    const newClass = await Class.create({
+      classname,
+      category,
+      organizationId: organization.id,
+      classdescrption,
+    });
+
+    return res.status(201).json({ data: newClass });
+  } catch (error) {
+    logger.error("Error in createClass:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const updateClass = async (req: Request, res: Response) => {
+  try {
+    const classId = Number(req.params.classId);
+    if (!classId) {
+      return res.status(400).json({ message: "Invalid class id" });
+    }
+
+    const targetClass = await Class.findByPk(classId);
+    if (!targetClass) {
+      return res.status(404).json({ message: "Class not found" });
+    }
+
+    const { classname, category, organizationId, classdescrption } = req.body;
+
+    if (organizationId !== undefined) {
+      const organization = await Organization.findByPk(Number(organizationId));
+      if (!organization) {
+        return res.status(400).json({ message: "Target organization does not exist" });
+      }
+    }
+
+    const updateData: Record<string, any> = {};
+    if (classname) updateData.classname = classname;
+    if (category) updateData.category = category;
+    if (organizationId !== undefined) updateData.organizationId = Number(organizationId);
+    if (classdescrption !== undefined) updateData.classdescrption = classdescrption;
+
+    if (Object.keys(updateData).length > 0) {
+      await targetClass.update(updateData);
+    }
+
+    return res.status(200).json({ data: targetClass });
+  } catch (error) {
+    logger.error("Error in updateClass:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const deleteClass = async (req: Request, res: Response) => {
+  try {
+    const classId = Number(req.params.classId);
+    if (!classId) {
+      return res.status(400).json({ message: "Invalid class id" });
+    }
+
+    const targetClass = await Class.findByPk(classId);
+    if (!targetClass) {
+      return res.status(404).json({ message: "Class not found" });
+    }
+
+    const studentCount = await Student.count({ where: { classId } });
+    if (studentCount > 0) {
+      return res.status(409).json({
+        message: "Class has students assigned, reassign or remove them first",
+        studentCount,
+      });
+    }
+
+    await targetClass.destroy();
+
+    return res.status(200).json({ message: "Class deleted successfully" });
+  } catch (error) {
+    logger.error("Error in deleteClass:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 const resetUserPassword = async (req: Request, res: Response) => {
   try {
     const userId = Number(req.params.userId);
@@ -737,5 +986,11 @@ export {
   listTeachers,
   listParents,
   createUser,
+  updateUser,
+  deleteUser,
+  listClasses,
+  createClass,
+  updateClass,
+  deleteClass,
   resetUserPassword,
 };

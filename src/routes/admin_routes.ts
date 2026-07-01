@@ -118,6 +118,23 @@ router.post("/users", authenticateToken, checkAdmin, adminController.createUser)
 
 /**
  * @swagger
+ * /admin/users/{userId}:
+ *   patch:
+ *     summary: Update a user's name/email (and role-specific fields for Student/Teacher)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *   delete:
+ *     summary: Delete a user of any role, cascading its role-specific data
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.patch("/users/:userId", authenticateToken, checkAdmin, adminController.updateUser);
+router.delete("/users/:userId", authenticateToken, checkAdmin, adminController.deleteUser);
+
+/**
+ * @swagger
  * /admin/users/{userId}/reset-password:
  *   patch:
  *     summary: Reset a user's password to the default test password
@@ -148,3 +165,37 @@ router.get("/teachers", authenticateToken, checkAdmin, adminController.listTeach
  *       - bearerAuth: []
  */
 router.get("/parents", authenticateToken, checkAdmin, adminController.listParents);
+
+/**
+ * @swagger
+ * /admin/classes:
+ *   get:
+ *     summary: List classes system-wide (search/filter by organization; paginate)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *   post:
+ *     summary: Create a new class
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get("/classes", authenticateToken, checkAdmin, adminController.listClasses);
+router.post("/classes", authenticateToken, checkAdmin, adminController.createClass);
+
+/**
+ * @swagger
+ * /admin/classes/{classId}:
+ *   patch:
+ *     summary: Update a class
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *   delete:
+ *     summary: Delete a class (blocked if it has students assigned)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.patch("/classes/:classId", authenticateToken, checkAdmin, adminController.updateClass);
+router.delete("/classes/:classId", authenticateToken, checkAdmin, adminController.deleteClass);
