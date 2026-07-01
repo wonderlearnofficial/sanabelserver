@@ -31,7 +31,9 @@ const corsOptions = {
 };
 
 const app = express();
-const PORT = process.env.SERVER_PORT;
+// Railway (and most PaaS hosts) assign their own port via process.env.PORT and
+// expect the app to bind to it; SERVER_PORT remains the local-dev override.
+const PORT = process.env.PORT || process.env.SERVER_PORT || 5000;
 
 // Middleware
 app.use(cors(corsOptions));
