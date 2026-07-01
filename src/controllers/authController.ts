@@ -2,9 +2,9 @@ import { Request, Response, NextFunction } from "express";
 import User from "../models/user.model";
 import logger from "../config/logger";
 
-
 import generateOTP from "../helpers/generateOtp";
 import { sendEmail } from "../helpers/sendEmail";
+import { buildOtpEmail } from "../helpers/emailTemplates";
 
 const sendOtp = async (req: Request, res: Response) => {
   const { email } = req.body;
@@ -32,8 +32,9 @@ const sendOtp = async (req: Request, res: Response) => {
 
       await sendEmail({
         to: email,
-        subject: "Your OTP Code for Access you account",
+        subject: "Your OTP Code – Sanabel Al-Ihsan",
         text: `Your OTP code is ${otp}. It is valid for 5 minutes.`,
+        html: buildOtpEmail(otp),
       });
 
       return res.status(200).json({
@@ -50,8 +51,9 @@ const sendOtp = async (req: Request, res: Response) => {
 
     await sendEmail({
       to: email,
-      subject: "Your OTP Code for Access you account",
+      subject: "Your OTP Code – Sanabel Al-Ihsan",
       text: `Your OTP code is ${otp}. It is valid for 5 minutes.`,
+      html: buildOtpEmail(otp),
     });
 
     return res.status(200).json({
@@ -96,7 +98,6 @@ const verifyOTP = async (req: Request, res: Response) => {
   } catch (error) {
     logger.error("Error verifying OTP:", { error, email });
     return res.status(500).json({
-
       status: 500,
       message: "Error verifying OTP",
       error,

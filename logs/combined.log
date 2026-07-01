@@ -3260,3 +3260,89 @@
 {"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T20:42:17.605Z"}
 {"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /","timestamp":"2026-07-01T20:42:33.813Z"}
 {"duration":2,"level":"info","message":"<-- GET / 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T20:42:33.815Z","url":"/"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T20:43:13.168Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T20:43:13.446Z"}
+{"duration":609,"level":"info","message":"<-- PATCH /users/login 200 609ms","method":"PATCH","status":200,"timestamp":"2026-07-01T20:43:14.055Z","url":"/users/login"}
+{"duration":892,"level":"info","message":"<-- PATCH /users/login 200 892ms","method":"PATCH","status":200,"timestamp":"2026-07-01T20:43:14.060Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T20:43:14.079Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T20:43:14.084Z"}
+{"duration":10,"level":"info","message":"<-- GET /students/data 200 10ms","method":"GET","status":200,"timestamp":"2026-07-01T20:43:14.094Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T20:43:14.104Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/data 200 3ms","method":"GET","status":200,"timestamp":"2026-07-01T20:43:14.107Z","url":"/students/data"}
+{"duration":1006,"level":"info","message":"<-- GET /students/data 304 1006ms","method":"GET","status":304,"timestamp":"2026-07-01T20:43:15.085Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T20:43:15.095Z"}
+{"duration":1721,"level":"info","message":"<-- GET /students/data 304 1721ms","method":"GET","status":304,"timestamp":"2026-07-01T20:43:16.816Z","url":"/students/data"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /students/update-profile-image","timestamp":"2026-07-01T20:43:56.163Z"}
+{"duration":6,"level":"info","message":"<-- PATCH /students/update-profile-image 200 6ms","method":"PATCH","status":200,"timestamp":"2026-07-01T20:43:56.169Z","url":"/students/update-profile-image"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/task-count-sucess","timestamp":"2026-07-01T20:43:56.223Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/task-count-sucess","timestamp":"2026-07-01T20:43:56.225Z"}
+{"duration":141,"level":"warn","message":"<-- GET /students/task-count-sucess 404 141ms","method":"GET","status":404,"timestamp":"2026-07-01T20:43:56.366Z","url":"/students/task-count-sucess"}
+{"duration":633,"level":"warn","message":"<-- GET /students/task-count-sucess 404 633ms","method":"GET","status":404,"timestamp":"2026-07-01T20:43:56.856Z","url":"/students/task-count-sucess"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T20:44:27.629Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T20:44:27.630Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T20:46:55.078Z"}
+{"duration":62,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 62ms","method":"GET","status":304,"timestamp":"2026-07-01T20:46:55.140Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /students/calculate-completed-tasks-by-category","timestamp":"2026-07-01T20:46:55.146Z"}
+{"duration":3,"level":"info","message":"<-- GET /students/calculate-completed-tasks-by-category 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T20:46:55.149Z","url":"/students/calculate-completed-tasks-by-category"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /users/send-auth","timestamp":"2026-07-01T20:47:05.696Z"}
+{"duration":2688,"level":"info","message":"<-- POST /users/send-auth 200 2688ms","method":"POST","status":200,"timestamp":"2026-07-01T20:47:08.384Z","url":"/users/send-auth"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:08:21.484Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:08:22.990Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:08:22.990Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:08:23.017Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:08:42.745Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:08:44.032Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:08:44.032Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:08:44.053Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:09:07.061Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:09:08.506Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:09:08.506Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:09:08.527Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:09:32.057Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:09:33.290Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:09:33.290Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:09:33.309Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:09:59.824Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:10:01.052Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:10:01.052Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:10:01.081Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /users/send-auth","timestamp":"2026-07-01T21:10:50.692Z"}
+{"duration":2573,"level":"info","message":"<-- POST /users/send-auth 200 2573ms","method":"POST","status":200,"timestamp":"2026-07-01T21:10:53.265Z","url":"/users/send-auth"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T21:12:03.566Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T21:12:03.569Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:21:36.113Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:21:37.649Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:21:37.650Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:21:37.686Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:21:44.313Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:21:45.633Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:21:45.633Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:21:45.661Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:21:58.269Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:21:59.487Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:21:59.487Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:21:59.514Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:22:10.097Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:22:11.498Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:22:11.498Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:22:11.530Z"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T21:24:17.713Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T21:24:17.720Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:32:25.917Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:32:27.531Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:32:27.531Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:32:27.562Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:32:45.728Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:32:47.094Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:32:47.094Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:32:47.124Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:32:51.684Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:32:53.086Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:32:53.087Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:32:53.113Z"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T21:35:00.280Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T21:35:00.286Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:37:37.060Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:37:38.356Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:37:38.357Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:37:38.384Z"}

@@ -4,12 +4,14 @@ interface SendEmailParams {
   to: string;
   subject: string;
   text: string;
+  /** Optional rich HTML body. Falls back to `text` when omitted. */
+  html?: string;
 }
 
 // Uses Resend's HTTP API (plain HTTPS, never blocked by PaaS egress rules) when
 // RESEND_API_KEY is set; otherwise falls back to SMTP via nodemailer, which is
 // what local dev uses today.
-export async function sendEmail({ to, subject, text }: SendEmailParams): Promise<void> {
+export async function sendEmail({ to, subject, text, html }: SendEmailParams): Promise<void> {
   const resendApiKey = process.env.RESEND_API_KEY;
 
   if (resendApiKey) {
@@ -24,6 +26,7 @@ export async function sendEmail({ to, subject, text }: SendEmailParams): Promise
         to: [to],
         subject,
         text,
+        ...(html ? { html } : {}),
       }),
     });
 
@@ -51,5 +54,6 @@ export async function sendEmail({ to, subject, text }: SendEmailParams): Promise
     to,
     subject,
     text,
+    ...(html ? { html } : {}),
   });
 }
