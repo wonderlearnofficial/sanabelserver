@@ -1,28 +1,21 @@
-import fs from "fs";
-import path from "path";
-
-/** Reads an asset from /server/assets and returns a base64 data-URI string. */
-function assetDataUri(filename: string, mime = "image/png"): string {
-  try {
-    const filePath = path.resolve(__dirname, "../../assets", filename);
-    const data = fs.readFileSync(filePath);
-    return `data:${mime};base64,${data.toString("base64")}`;
-  } catch {
-    // If the asset can't be read (e.g. in test env), return empty string
-    return "";
-  }
-}
-
 /**
  * Returns a fully self-contained, responsive HTML email for OTP delivery.
- * Logos are embedded as base64 data-URIs so they render without a public URL.
+ * Images are referenced by public URL (not base64-embedded) to stay well
+ * under Gmail's 102 KB clip limit.
  * Compatible with Outlook, Gmail, Apple Mail, and all major clients.
  */
+
+/** Resolves the public base URL of the server from the environment. */
+function getBaseUrl(): string {
+  return (process.env.BASE_URL || "https://sanabel-production.up.railway.app").replace(/\/$/, "");
+}
+
 export function buildOtpEmail(otp: string): string {
   const digits = otp.split(""); // e.g. ['1','2','3','4']
 
-  const wonderlearnUri = assetDataUri("WonderLearn.png");
-  const sanabelUri = assetDataUri("splash.png");
+  const base = getBaseUrl();
+  const sanabelUri = `${base}/assets/splash.png`;
+  const wonderlearnUri = `${base}/assets/WonderLearn.png`;
 
   const digitBoxes = digits
     .map(

@@ -16,6 +16,8 @@ import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
 import Organization, { OrganizationType } from "../models/oraganization.model";
 import { QueryTypes } from "sequelize";
+import { generatePassword } from "../helpers/generatePassword";
+import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
 
 const DEFAULT_RESET_PASSWORD = "Test1234!";
 
@@ -588,6 +590,113 @@ const listParents = async (req: Request, res: Response) => {
   }
 };
 
+const createUser = async (req: Request, res: Response) => {
+  try {
+    const {
+      firstName,
+      lastName,
+      email,
+      role,
+      organizationId,
+      classId,
+      grade,
+    } = req.body;
+
+    if (!firstName || !email || !role) {
+      return res.status(400).json({ message: "firstName, email and role are required" });
+    }
+
+    const validRoles = ["Student", "Teacher", "Parent", "Admin"];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ message: `role must be one of ${validRoles.join(", ")}` });
+    }
+
+    const existing = await User.findOne({ where: { email } });
+    if (existing) {
+      return res.status(409).json({ message: "Email already in use" });
+    }
+
+    let resolvedOrganizationId: number | undefined;
+    if (role === "Student" || role === "Teacher") {
+      if (organizationId === undefined) {
+        return res.status(400).json({ message: "organizationId is required for this role" });
+      }
+      const organization = await Organization.findByPk(Number(organizationId));
+      if (!organization) {
+        return res.status(400).json({ message: "Target organization does not exist" });
+      }
+      resolvedOrganizationId = organization.id;
+    }
+
+    let resolvedClassId: number | undefined;
+    if (role === "Student" && classId !== undefined && classId !== "") {
+      const targetClass = await Class.findByPk(Number(classId));
+      if (!targetClass) {
+        return res.status(400).json({ message: "Target class does not exist" });
+      }
+      if (targetClass.organizationId !== resolvedOrganizationId) {
+        return res.status(400).json({ message: "Target class does not belong to the selected organization" });
+      }
+      resolvedClassId = targetClass.id;
+    }
+
+    const password = generatePassword();
+    const hashedPassword = bcrypt.hashSync(password, 10);
+
+    const userRecord = await User.create({
+      firstName,
+      lastName: lastName || "",
+      email,
+      password: hashedPassword,
+      role,
+      isAccess: true,
+      otpVerified: true,
+    });
+
+    if (role === "Student") {
+      const connectCode = await generateUniqueConnectCode();
+      const student = await Student.create({
+        userId: userRecord.id,
+        organizationId: resolvedOrganizationId,
+        classId: resolvedClassId,
+        grade: grade || "",
+        treeProgress: 1,
+        connectCode,
+      });
+
+      const allChallenges = await Challenge.findAll();
+      await StudentChallenge.bulkCreate(
+        allChallenges.map((challenge) => ({
+          studentId: student.id,
+          challengeId: challenge.id,
+          completionStatus: "NotCompleted",
+        }))
+      );
+    } else if (role === "Teacher") {
+      await Teacher.create({
+        userId: userRecord.id,
+        organizationId: resolvedOrganizationId,
+      });
+    } else if (role === "Parent") {
+      await Parent.create({ userId: userRecord.id });
+    }
+
+    return res.status(201).json({
+      data: {
+        id: userRecord.id,
+        firstName: userRecord.firstName,
+        lastName: userRecord.lastName,
+        email: userRecord.email,
+        role: userRecord.role,
+      },
+      password,
+    });
+  } catch (error) {
+    logger.error("Error in createUser:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 const resetUserPassword = async (req: Request, res: Response) => {
   try {
     const userId = Number(req.params.userId);
@@ -627,5 +736,6 @@ export {
   listUsers,
   listTeachers,
   listParents,
+  createUser,
   resetUserPassword,
 };

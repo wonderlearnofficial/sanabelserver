@@ -107,6 +107,17 @@ router.get("/users", authenticateToken, checkAdmin, adminController.listUsers);
 
 /**
  * @swagger
+ * /admin/users:
+ *   post:
+ *     summary: Create a new user account of any role (Student/Teacher/Parent/Admin), bypassing OTP
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post("/users", authenticateToken, checkAdmin, adminController.createUser);
+
+/**
+ * @swagger
  * /admin/users/{userId}/reset-password:
  *   patch:
  *     summary: Reset a user's password to the default test password
