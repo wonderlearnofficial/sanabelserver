@@ -71,9 +71,9 @@ const appearStudent = async (req: Request, res: Response) => {
         },
         {
           model: Class,
-          as: "Class", 
-          attributes: ["id", "classname","category"], 
-          required: false, 
+          as: "Class",
+          attributes: ["id", "classname","grade"],
+          required: false,
         },
         {
           model: Organization,
@@ -260,22 +260,22 @@ const createClass = async (req: Request, res: Response) => {
     const {
       classname,
       classDescription = "",
-      category,
+      grade,
       organizationId,
     } = req.body;
-    if (!classname || !category || !organizationId) {
+    if (!classname || !grade || !organizationId) {
       return res
         .status(400)
         .json({
           message:
-            "Missing required fields: classname, category, or organizationId",
+            "Missing required fields: classname, grade, or organizationId",
         });
     }
 
     const newClass = await Class.create({
       classname,
       classDescription,
-      category,
+      grade,
       organizationId,
     });
 
@@ -584,7 +584,7 @@ const appearStudentInDetails = async (req: Request, res: Response) => {
       },
       {model: Class,
         as: "class",
-        attributes: ["id", "classname",'category'],
+        attributes: ["id", "classname",'grade'],
       }
       ,{model: Organization,
         as: "organization",
@@ -887,7 +887,7 @@ const addTeacher = async (req: Request, res: Response) => {
   }
 };
 
-const appearClassCategory =  async (req: Request, res: Response) => {
+const appearClassGrade =  async (req: Request, res: Response) => {
   try {
     const user = (req as Request & { user?: JwtPayload }).user;
 
@@ -902,31 +902,31 @@ const appearClassCategory =  async (req: Request, res: Response) => {
       return res.status(403).json({ message: "Access denied. Not a teacher or student." });
     }
 
-    const classCategories = await Class.findAll({
+    const classGrades = await Class.findAll({
       where: { organizationId: teacher?.organizationId || student?.organizationId },
-      attributes: ["category"],
-      group: ["category"],
+      attributes: ["grade"],
+      group: ["grade"],
     });
 
-    const categories = classCategories.map((cls) => cls.category);
-    return res.status(200).json({ categories });
+    const grades = classGrades.map((cls) => cls.grade);
+    return res.status(200).json({ grades });
   } catch (error) {
-    logger.error("Error in appearClassCategory (teacher):", { error });
+    logger.error("Error in appearClassGrade (teacher):", { error });
     return res.status(500).json({ message: "Internal server error" });
   }
 };
 
-const getClassesByCategory = async (req: Request, res: Response) => {
+const getClassesByGrade = async (req: Request, res: Response) => {
   try {
     const user = (req as Request & { user?: JwtPayload }).user;
-    const { category } = req.query;
+    const { grade } = req.query;
 
     if (!user) {
       return res.status(404).json({ message: "User data not found in request" });
     }
 
-    if (!category || typeof category !== "string") {
-      return res.status(400).json({ message: "Missing or invalid 'category' in URL parameters" });
+    if (!grade || typeof grade !== "string") {
+      return res.status(400).json({ message: "Missing or invalid 'grade' in URL parameters" });
     }
 
     const teacher = await Teacher.findOne({ where: { userId: user.id } });
@@ -942,14 +942,14 @@ const getClassesByCategory = async (req: Request, res: Response) => {
     const classes = await Class.findAll({
       where: {
         organizationId,
-        category,
+        grade,
       },
       attributes: ["id", "classname"],
     });
 
     return res.status(200).json({ classes });
   } catch (error) {
-    logger.error("Error in getClassesByCategory (teacher):", { error });
+    logger.error("Error in getClassesByGrade (teacher):", { error });
     return res.status(500).json({ message: "Internal server error" });
   }
 };
@@ -969,6 +969,6 @@ export {
   deleteData,
   addStudentToClass,
   addTeacher,
-  appearClassCategory,
-  getClassesByCategory
+  appearClassGrade,
+  getClassesByGrade
 };

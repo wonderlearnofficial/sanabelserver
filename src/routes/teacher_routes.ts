@@ -17,8 +17,8 @@ import {
   deleteData,
   addStudentToClass,
   addTeacher,
-  appearClassCategory,
-  getClassesByCategory
+  appearClassGrade,
+  getClassesByGrade
 } from "../controllers/teacherController";
 import {
   appearLeaderboard,
@@ -436,7 +436,7 @@ router.get(
  * /teachers/create-class:
  *   post:
  *     summary: Create a new class
- *     description: This endpoint allows a teacher to create a new class with necessary details like class name, description, category, and associated organization.
+ *     description: This endpoint allows a teacher to create a new class with necessary details like class name, description, grade, and associated organization.
  *     tags: [Teachers]
  *     security:
  *       - bearerAuth: []  # Requires JWT token
@@ -455,10 +455,10 @@ router.get(
  *                 type: string
  *                 description: A brief description of the class
  *                 example: "Introduction to basic algebra"
- *               category:
+ *               grade:
  *                 type: string
- *                 description: The category or subject of the class
- *                 example: "Mathematics"
+ *                 description: The grade level of the class
+ *                 example: "primary"
  *               organizationId:
  *                 type: integer
  *                 description: The ID of the associated organization
@@ -486,14 +486,14 @@ router.get(
  *                     classDescription:
  *                       type: string
  *                       example: "Introduction to basic algebra"
- *                     category:
+ *                     grade:
  *                       type: string
- *                       example: "Mathematics"
+ *                       example: "primary"
  *                     organizationId:
  *                       type: integer
  *                       example: 1
  *       400:
- *         description: Missing required fields (classname, category, or organizationId)
+ *         description: Missing required fields (classname, grade, or organizationId)
  *       401:
  *         description: "Unauthorized: User data not found in request"
  *       404:
@@ -631,9 +631,9 @@ router.post("/add-pros", authenticateToken, checkTeacher, addPros);
  *                         classname:
  *                           type: string
  *                           example: "Math 101"
- *                         category:
+ *                         grade:
  *                           type: string
- *                           example: "Mathematics"
+ *                           example: "primary"
  *                     organization:
  *                       type: object
  *                       properties:
@@ -1071,50 +1071,50 @@ router.post(
 );
 /**
  * @swagger
- * /teachers/class-categories:
+ * /teachers/class-grades:
  *   get:
- *     summary: Retrieve unique class categories for the authenticated teacher's organization
+ *     summary: Retrieve unique class grades for the authenticated teacher's organization
  *     tags: [Teachers]
  *     security:
  *       - bearerAuth: []  # Requires JWT token
  *     responses:
  *       200:
- *         description: List of class categories
+ *         description: List of class grades
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 categories:
+ *                 grades:
  *                   type: array
  *                   items:
  *                     type: string
- *                     example: "Science"
+ *                     example: "primary"
  *       404:
  *         description: User or Teacher not found
  *       500:
  *         description: Internal server error
  */
 
-router.get("/class-categories",  authenticateToken, checkTeacher,appearClassCategory);
+router.get("/class-grades",  authenticateToken, checkTeacher,appearClassGrade);
 /**
  * @swagger
- * /teachers/classes-by-category:
+ * /teachers/classes-by-grade:
  *   get:
- *     summary: Get classes under a specific category for the authenticated teacher's organization
+ *     summary: Get classes under a specific grade for the authenticated teacher's organization
  *     tags: [Teachers]
  *     security:
  *       - bearerAuth: []  # Requires JWT token
  *     parameters:
  *       - in: body
- *         name: category
+ *         name: grade
  *         schema:
  *           type: string
  *         required: true
- *         description: The class category to filter by
+ *         description: The class grade to filter by
  *     responses:
  *       200:
- *         description: List of classes in the specified category
+ *         description: List of classes in the specified grade
  *         content:
  *           application/json:
  *             schema:
@@ -1132,11 +1132,11 @@ router.get("/class-categories",  authenticateToken, checkTeacher,appearClassCate
  *                         type: string
  *                         example: "Physics 101"
  *       400:
- *         description: Missing or invalid category query parameter
+ *         description: Missing or invalid grade query parameter
  *       404:
  *         description: User or Teacher not found
  *       500:
  *         description: Internal server error
  */
 
-router.get("/classes-by-category" ,authenticateToken, checkTeacher, getClassesByCategory);
+router.get("/classes-by-grade" ,authenticateToken, checkTeacher, getClassesByGrade);

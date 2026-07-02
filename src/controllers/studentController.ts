@@ -900,11 +900,11 @@ const appearLeaderboard = async (req: Request, res: Response) => {
     const user = (req as Request & { user?: JwtPayload }).user;
     if (!user) return res.status(401).json({ message: "Unauthorized" });
 
-    const { className, category, gender } = req.query;
-    if (className && !category ) {
+    const { className, grade, gender } = req.query;
+    if (className && !grade ) {
       return res.status(400).json({
         message:
-          "If 'className' is provided, 'category' must also be included.",
+          "If 'className' is provided, 'grade' must also be included.",
       });
     }
 
@@ -924,7 +924,7 @@ const appearLeaderboard = async (req: Request, res: Response) => {
 
     if (gender) userFilters.gender = gender;
     if (className) classFilters.classname = className;
-    if (category) classFilters.category = category;
+    if (grade) classFilters.grade = grade;
 
     if (teacher) {
       // If teacher has no organizationId, return empty result
@@ -961,7 +961,7 @@ const appearLeaderboard = async (req: Request, res: Response) => {
           model: Class,
           as: "class",
           where: classFilters,
-          attributes: ["classname", "category"],
+          attributes: ["classname", "grade"],
         },
       ],
       order: [["xp", "DESC"]],
@@ -1259,7 +1259,7 @@ const addStudent = async (req: Request, res: Response) => {
             where: {
               organizationId: organization.id,
               classname: data.ClassName,
-              category: data.Grade,
+              grade: data.Grade,
             },
           });
           if (!class_data) {

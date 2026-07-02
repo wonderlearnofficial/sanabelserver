@@ -193,7 +193,7 @@ const appearStudentbyparent = async (req: Request, res: Response) => {
             },
             {model: Class,
               as: "class",
-              attributes: ["id", "classname",'category'],
+              attributes: ["id", "classname",'grade'],
             }
             ,{model: Organization,
               as: "organization",
@@ -451,7 +451,7 @@ const addPros = async (req: Request, res: Response) => {
           },
           {model: Class,
             as: "class",
-            attributes: ["id", "classname",'category'],
+            attributes: ["id", "classname",'grade'],
           }
           ,{model: Organization,
             as: "organization",

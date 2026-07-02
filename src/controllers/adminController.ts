@@ -91,7 +91,7 @@ const getOrganization = async (req: Request, res: Response) => {
         {
           model: Class,
           as: "Classes",
-          attributes: ["id", "classname", "category"],
+          attributes: ["id", "classname", "grade"],
           required: false,
         },
       ],
@@ -252,7 +252,7 @@ const listStudents = async (req: Request, res: Response) => {
         {
           model: Class,
           as: "Class",
-          attributes: ["id", "classname", "category"],
+          attributes: ["id", "classname", "grade"],
           required: false,
         },
         {
@@ -294,7 +294,7 @@ const getStudentDetail = async (req: Request, res: Response) => {
         {
           model: Class,
           as: "Class",
-          attributes: ["id", "classname", "category"],
+          attributes: ["id", "classname", "grade"],
           required: false,
         },
         {
@@ -877,10 +877,10 @@ const listClasses = async (req: Request, res: Response) => {
 
 const createClass = async (req: Request, res: Response) => {
   try {
-    const { classname, category, organizationId, classdescrption } = req.body;
+    const { classname, grade, organizationId, classdescrption } = req.body;
 
-    if (!classname || !category || !organizationId) {
-      return res.status(400).json({ message: "classname, category and organizationId are required" });
+    if (!classname || !grade || !organizationId) {
+      return res.status(400).json({ message: "classname, grade and organizationId are required" });
     }
 
     const organization = await Organization.findByPk(Number(organizationId));
@@ -890,7 +890,7 @@ const createClass = async (req: Request, res: Response) => {
 
     const newClass = await Class.create({
       classname,
-      category,
+      grade,
       organizationId: organization.id,
       classdescrption,
     });
@@ -914,7 +914,7 @@ const updateClass = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Class not found" });
     }
 
-    const { classname, category, organizationId, classdescrption } = req.body;
+    const { classname, grade, organizationId, classdescrption } = req.body;
 
     if (organizationId !== undefined) {
       const organization = await Organization.findByPk(Number(organizationId));
@@ -925,7 +925,7 @@ const updateClass = async (req: Request, res: Response) => {
 
     const updateData: Record<string, any> = {};
     if (classname) updateData.classname = classname;
-    if (category) updateData.category = category;
+    if (grade) updateData.grade = grade;
     if (organizationId !== undefined) updateData.organizationId = Number(organizationId);
     if (classdescrption !== undefined) updateData.classdescrption = classdescrption;
 

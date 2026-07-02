@@ -11,7 +11,7 @@ const upload = multer({ dest: "uploads/" });
  *     summary: Create classes and organizations from an uploaded Excel file
  *     description: |
  *       Upload an Excel file where each sheet represents a school, the second row is treated as headers.
- *       "Category" and "Names of classes" columns are required.
+ *       "Grade" and "Names of classes" columns are required.
  *       The "Names of classes" can contain multiple class names separated by `/` or `&`.
  *       This endpoint will:
  *       - Create an organization (school) if it doesn't exist.

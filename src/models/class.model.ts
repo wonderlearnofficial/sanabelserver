@@ -8,6 +8,7 @@ class Class extends Model {
   declare classname: CreationOptional<String>; // Name of the class
   declare organizationId: CreationOptional<number>; // Reference to the Organization
   declare classdescrption: CreationOptional<String>; // Description of the class
+  declare grade: CreationOptional<String>; // Grade level of the class (primary/preparatory/secondary)
   declare category: CreationOptional<String>; // Category of the class
   static associate(models: any) {
     Class.belongsTo(models.Teacher, { foreignKey: "teacherId", as: "Teachers" });
@@ -33,9 +34,13 @@ class Class extends Model {
           type: DataTypes.STRING,
           allowNull: true,
         },
+        grade: {
+          type: DataTypes.STRING,
+          allowNull: true,
+        },
         category: {
           type: DataTypes.STRING,
-          allowNull: false,
+          allowNull: true,
         },
       },
       {

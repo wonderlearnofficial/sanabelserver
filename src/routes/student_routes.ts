@@ -28,7 +28,7 @@ import { authenticateToken } from "../middleware/auth";
 import { checkstudent } from "../middleware/checkrole";
 import multer from "multer";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
-import { appearClassCategory, getClassesByCategory } from "../controllers/teacherController";
+import { appearClassGrade, getClassesByGrade } from "../controllers/teacherController";
 const upload = multer({ dest: "uploads/" });
 
 export const router = require("express").Router();
@@ -1082,50 +1082,50 @@ router.delete("/delete", authenticateToken, checkstudent, deleteData);
 router.patch("/update-profile-image", authenticateToken, checkstudent, updateProfileImage);
 /**
  * @swagger
- * /students/class-categories:
+ * /students/class-grades:
  *   get:
- *     summary: Retrieve unique class categories for the authenticated teacher's organization
+ *     summary: Retrieve unique class grades for the authenticated teacher's organization
  *     tags: [Students]
  *     security:
  *       - bearerAuth: []  # Requires JWT token
  *     responses:
  *       200:
- *         description: List of class categories
+ *         description: List of class grades
  *         content:
  *           application/json:
  *             schema:
  *               type: object
  *               properties:
- *                 categories:
+ *                 grades:
  *                   type: array
  *                   items:
  *                     type: string
- *                     example: "Science"
+ *                     example: "primary"
  *       404:
  *         description: User or Teacher not found
  *       500:
  *         description: Internal server error
  */
-router.get("/class-categories",  authenticateToken, checkstudent,appearClassCategory);
+router.get("/class-grades",  authenticateToken, checkstudent,appearClassGrade);
 
 /**
  * @swagger
- * /students/classes-by-category:
+ * /students/classes-by-grade:
  *   get:
- *     summary: Get classes under a specific category for the authenticated teacher's organization
+ *     summary: Get classes under a specific grade for the authenticated teacher's organization
  *     tags: [Students]
  *     security:
  *       - bearerAuth: []  # Requires JWT token
  *     parameters:
  *       - in: body
- *         name: category
+ *         name: grade
  *         schema:
  *           type: string
  *         required: true
- *         description: The class category to filter by
+ *         description: The class grade to filter by
  *     responses:
  *       200:
- *         description: List of classes in the specified category
+ *         description: List of classes in the specified grade
  *         content:
  *           application/json:
  *             schema:
@@ -1143,14 +1143,14 @@ router.get("/class-categories",  authenticateToken, checkstudent,appearClassCate
  *                         type: string
  *                         example: "Physics 101"
  *       400:
- *         description: Missing or invalid category query parameter
+ *         description: Missing or invalid grade query parameter
  *       404:
  *         description: User or Teacher not found
  *       500:
  *         description: Internal server error
  */
 
-router.get("/classes-by-category" ,authenticateToken, checkstudent, getClassesByCategory);
+router.get("/classes-by-grade" ,authenticateToken, checkstudent, getClassesByGrade);
 
 /**
  * @swagger

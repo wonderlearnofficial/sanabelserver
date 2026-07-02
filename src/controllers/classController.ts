@@ -39,11 +39,11 @@ const createClassByExcel = async (req: Request, res: Response) => {
 
         // Loop through each row
         for (const row of normalizedData) {
-          const category = row["category"];
+          const grade = row["grade"];
           let classNames = row["names of classes"];
 
-          if (!category || !classNames) {
-            logger.warn(`Missing category or class names in row:`, { row });
+          if (!grade || !classNames) {
+            logger.warn(`Missing grade or class names in row:`, { row });
             continue;
           }
 
@@ -68,13 +68,13 @@ const createClassByExcel = async (req: Request, res: Response) => {
             const existing = await Class.findOne({
               where: {
                 classname: className.trim().toLowerCase(),
-                category: category.trim().toLowerCase(),
+                grade: grade.trim().toLowerCase(),
                 organizationId: organization.id,
               },
             });
 
             if (existing) {
-              logger.info(`Class "${className}" already exists in category "${category}" for school "${schoolName}". Skipping.`);
+              logger.info(`Class "${className}" already exists in grade "${grade}" for school "${schoolName}". Skipping.`);
               continue;
             }
 
@@ -83,10 +83,10 @@ const createClassByExcel = async (req: Request, res: Response) => {
               await Class.create({
                 classname: className.trim().toLowerCase(),
                 classdescrption: "Description not provided",
-                category: category.trim().toLowerCase(),
+                grade: grade.trim().toLowerCase(),
                 organizationId: organization.id,
               });
-              logger.info(`Created class "${className}" in category "${category}" for "${schoolName}"`);
+              logger.info(`Created class "${className}" in grade "${grade}" for "${schoolName}"`);
             } catch (err) {
               logger.error(`Failed to create class "${className}":`, { error: err });
             }
