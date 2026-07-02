@@ -3346,3 +3346,267 @@
 {"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:37:38.356Z"}
 {"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:37:38.357Z"}
 {"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:37:38.384Z"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T21:39:43.083Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T21:39:43.088Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:55:24.637Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:55:25.938Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:55:25.938Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:55:25.974Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:55:46.994Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:55:48.370Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:55:48.370Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:55:48.400Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:56:19.884Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:56:21.288Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:56:21.288Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:56:21.313Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:56:46.566Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:56:48.386Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:56:48.387Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:56:48.424Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T21:57:26.287Z"}
+{"duration":323,"level":"warn","message":"<-- PATCH /users/login 401 323ms","method":"PATCH","status":401,"timestamp":"2026-07-01T21:57:26.610Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /admin/users","timestamp":"2026-07-01T21:57:26.654Z"}
+{"duration":1,"level":"warn","message":"<-- POST /admin/users 401 1ms","method":"POST","status":401,"timestamp":"2026-07-01T21:57:26.655Z","url":"/admin/users"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /admin/users","timestamp":"2026-07-01T21:57:26.687Z"}
+{"duration":1,"level":"warn","message":"<-- POST /admin/users 401 1ms","method":"POST","status":401,"timestamp":"2026-07-01T21:57:26.688Z","url":"/admin/users"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /admin/users","timestamp":"2026-07-01T21:57:26.718Z"}
+{"duration":1,"level":"warn","message":"<-- POST /admin/users 401 1ms","method":"POST","status":401,"timestamp":"2026-07-01T21:57:26.719Z","url":"/admin/users"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /admin/users","timestamp":"2026-07-01T21:57:26.750Z"}
+{"duration":0,"level":"warn","message":"<-- POST /admin/users 401 0ms","method":"POST","status":401,"timestamp":"2026-07-01T21:57:26.750Z","url":"/admin/users"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T21:57:37.922Z"}
+{"duration":190,"level":"warn","message":"<-- PATCH /users/login 401 190ms","method":"PATCH","status":401,"timestamp":"2026-07-01T21:57:38.113Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /","timestamp":"2026-07-01T21:57:53.066Z"}
+{"duration":0,"level":"info","message":"<-- GET / 200 0ms","method":"GET","status":200,"timestamp":"2026-07-01T21:57:53.066Z","url":"/"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:57:56.228Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:57:57.918Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:57:57.919Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:57:57.955Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:58:08.369Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:58:08.395Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:58:07.768Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:58:09.106Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:58:09.106Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:58:09.137Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:58:13.670Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:58:14.995Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:58:14.995Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:58:15.023Z"}
+{"error":{"name":"SequelizeDatabaseError","parameters":{},"sql":"ALTER TABLE `Parents` CHANGE `createdAt` `createdAt` DATETIME(6) NOT NULL;"},"level":"error","message":"Unable to connect to the database schema:","timestamp":"2026-07-01T21:59:17.034Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T21:59:17.041Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:59:56.508Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:59:56.534Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T21:59:56.179Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T21:59:57.555Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T21:59:57.555Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T21:59:57.585Z"}
+{"error":{"name":"SequelizeDatabaseError","parameters":{},"sql":"ALTER TABLE `Parents` CHANGE `createdAt` `createdAt` DATETIME(6) NOT NULL;"},"level":"error","message":"Unable to connect to the database schema:","timestamp":"2026-07-01T22:01:10.492Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T22:01:10.498Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T22:01:13.140Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T22:01:14.357Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T22:01:14.357Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T22:01:14.381Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:01:27.654Z"}
+{"duration":369,"level":"info","message":"<-- PATCH /users/login 200 369ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:01:28.023Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /admin/users","timestamp":"2026-07-01T22:01:28.063Z"}
+{"duration":2603,"level":"info","message":"<-- POST /admin/users 201 2603ms","method":"POST","status":201,"timestamp":"2026-07-01T22:01:30.666Z","url":"/admin/users"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /admin/users","timestamp":"2026-07-01T22:01:30.699Z"}
+{"duration":2,"level":"warn","message":"<-- POST /admin/users 400 2ms","method":"POST","status":400,"timestamp":"2026-07-01T22:01:30.701Z","url":"/admin/users"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /admin/users","timestamp":"2026-07-01T22:01:30.734Z"}
+{"duration":2723,"level":"info","message":"<-- POST /admin/users 201 2723ms","method":"POST","status":201,"timestamp":"2026-07-01T22:01:33.457Z","url":"/admin/users"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /admin/users","timestamp":"2026-07-01T22:01:33.491Z"}
+{"duration":2,"level":"warn","message":"<-- POST /admin/users 409 2ms","method":"POST","status":409,"timestamp":"2026-07-01T22:01:33.493Z","url":"/admin/users"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T22:03:23.948Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T22:03:23.950Z"}
+{"ip":"::1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:05:50.249Z"}
+{"duration":59,"level":"info","message":"<-- PATCH /users/login 200 59ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:05:50.308Z","url":"/users/login"}
+{"ip":"::1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T22:05:50.310Z"}
+{"actualRole":"Admin","level":"warn","message":"Unauthorized access attempt: Not a Student","timestamp":"2026-07-01T22:05:50.311Z","userEmail":"admin@sanabel.local"}
+{"duration":1,"level":"warn","message":"<-- GET /students/data 403 1ms","method":"GET","status":403,"timestamp":"2026-07-01T22:05:50.311Z","url":"/students/data"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:05:50.313Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/me 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:05:50.315Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:05:54.546Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/me 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T22:05:54.548Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:05:54.549Z"}
+{"duration":1,"level":"info","message":"<-- GET /admin/me 304 1ms","method":"GET","status":304,"timestamp":"2026-07-01T22:05:54.550Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/users?page=1&limit=25","timestamp":"2026-07-01T22:05:54.954Z"}
+{"duration":5,"level":"info","message":"<-- GET /admin/users?page=1&limit=25 200 5ms","method":"GET","status":200,"timestamp":"2026-07-01T22:05:54.959Z","url":"/admin/users?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?limit=1000","timestamp":"2026-07-01T22:05:56.534Z"}
+{"duration":9,"level":"info","message":"<-- GET /admin/organizations?limit=1000 200 9ms","method":"GET","status":200,"timestamp":"2026-07-01T22:05:56.543Z","url":"/admin/organizations?limit=1000"}
+{"ip":"::1","level":"info","message":"--> GET /admin/users?page=1&limit=25&search=PWTest","timestamp":"2026-07-01T22:05:57.417Z"}
+{"duration":4,"level":"info","message":"<-- GET /admin/users?page=1&limit=25&search=PWTest 200 4ms","method":"GET","status":200,"timestamp":"2026-07-01T22:05:57.421Z","url":"/admin/users?page=1&limit=25&search=PWTest"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations/1","timestamp":"2026-07-01T22:05:57.499Z"}
+{"duration":5,"level":"info","message":"<-- GET /admin/organizations/1 200 5ms","method":"GET","status":200,"timestamp":"2026-07-01T22:05:57.504Z","url":"/admin/organizations/1"}
+{"ip":"::1","level":"info","message":"--> POST /admin/users","timestamp":"2026-07-01T22:05:58.361Z"}
+{"duration":167,"level":"info","message":"<-- POST /admin/users 201 167ms","method":"POST","status":201,"timestamp":"2026-07-01T22:05:58.528Z","url":"/admin/users"}
+{"ip":"::1","level":"info","message":"--> GET /admin/users?page=1&limit=25&search=PWTest","timestamp":"2026-07-01T22:05:58.530Z"}
+{"duration":1,"level":"info","message":"<-- GET /admin/users?page=1&limit=25&search=PWTest 304 1ms","method":"GET","status":304,"timestamp":"2026-07-01T22:05:58.531Z","url":"/admin/users?page=1&limit=25&search=PWTest"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T22:17:09.166Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T22:17:10.444Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T22:17:10.444Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T22:17:10.475Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T22:17:31.032Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T22:17:32.480Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T22:17:32.481Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T22:17:32.510Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T22:18:23.935Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T22:18:25.261Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T22:18:25.261Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T22:18:25.290Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T22:18:35.634Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T22:18:36.988Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T22:18:36.988Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T22:18:37.017Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:19:14.602Z"}
+{"duration":807,"level":"info","message":"<-- PATCH /users/login 200 807ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:19:15.408Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/classes?limit=3","timestamp":"2026-07-01T22:19:15.447Z"}
+{"duration":30,"level":"info","message":"<-- GET /admin/classes?limit=3 200 30ms","method":"GET","status":200,"timestamp":"2026-07-01T22:19:15.477Z","url":"/admin/classes?limit=3"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /admin/classes","timestamp":"2026-07-01T22:19:15.509Z"}
+{"duration":19,"level":"info","message":"<-- POST /admin/classes 201 19ms","method":"POST","status":201,"timestamp":"2026-07-01T22:19:15.528Z","url":"/admin/classes"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:19:30.720Z"}
+{"duration":72,"level":"info","message":"<-- PATCH /users/login 200 72ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:19:30.792Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:19:30.824Z"}
+{"duration":64,"level":"info","message":"<-- PATCH /users/login 200 64ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:19:30.888Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/classes?limit=3","timestamp":"2026-07-01T22:19:30.927Z"}
+{"duration":386,"level":"info","message":"<-- GET /admin/classes?limit=3 200 386ms","method":"GET","status":200,"timestamp":"2026-07-01T22:19:31.313Z","url":"/admin/classes?limit=3"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /admin/classes/169","timestamp":"2026-07-01T22:19:31.347Z"}
+{"duration":10,"level":"info","message":"<-- PATCH /admin/classes/169 200 10ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:19:31.357Z","url":"/admin/classes/169"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> DELETE /admin/classes/169","timestamp":"2026-07-01T22:19:31.391Z"}
+{"duration":7,"level":"info","message":"<-- DELETE /admin/classes/169 200 7ms","method":"DELETE","status":200,"timestamp":"2026-07-01T22:19:31.398Z","url":"/admin/classes/169"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /admin/users/47","timestamp":"2026-07-01T22:19:31.432Z"}
+{"duration":10,"level":"info","message":"<-- PATCH /admin/users/47 200 10ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:19:31.442Z","url":"/admin/users/47"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/teachers?limit=5","timestamp":"2026-07-01T22:19:31.475Z"}
+{"duration":2674,"level":"info","message":"<-- GET /admin/teachers?limit=5 200 2674ms","method":"GET","status":200,"timestamp":"2026-07-01T22:19:34.149Z","url":"/admin/teachers?limit=5"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:19:57.165Z"}
+{"duration":64,"level":"info","message":"<-- PATCH /users/login 200 64ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:19:57.229Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /admin/users/45","timestamp":"2026-07-01T22:19:57.266Z"}
+{"duration":464,"level":"info","message":"<-- PATCH /admin/users/45 200 464ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:19:57.730Z","url":"/admin/users/45"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/students?search=RenamedStudent","timestamp":"2026-07-01T22:19:57.763Z"}
+{"duration":13,"level":"info","message":"<-- GET /admin/students?search=RenamedStudent 200 13ms","method":"GET","status":200,"timestamp":"2026-07-01T22:19:57.776Z","url":"/admin/students?search=RenamedStudent"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> DELETE /admin/users/51","timestamp":"2026-07-01T22:19:57.809Z"}
+{"duration":1056,"level":"info","message":"<-- DELETE /admin/users/51 200 1056ms","method":"DELETE","status":200,"timestamp":"2026-07-01T22:19:58.865Z","url":"/admin/users/51"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/users?search=createtest-parent","timestamp":"2026-07-01T22:19:58.898Z"}
+{"duration":4,"level":"info","message":"<-- GET /admin/users?search=createtest-parent 200 4ms","method":"GET","status":200,"timestamp":"2026-07-01T22:19:58.901Z","url":"/admin/users?search=createtest-parent"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:20:36.024Z"}
+{"duration":65,"level":"info","message":"<-- PATCH /users/login 200 65ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:20:36.089Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/students?search=RenamedStudent","timestamp":"2026-07-01T22:20:36.125Z"}
+{"duration":20,"level":"info","message":"<-- GET /admin/students?search=RenamedStudent 200 20ms","method":"GET","status":200,"timestamp":"2026-07-01T22:20:36.145Z","url":"/admin/students?search=RenamedStudent"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T22:20:47.622Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T22:20:47.623Z"}
+{"ip":"::1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:26:05.221Z"}
+{"duration":60,"level":"info","message":"<-- PATCH /users/login 200 60ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:26:05.281Z","url":"/users/login"}
+{"ip":"::1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T22:26:05.284Z"}
+{"actualRole":"Admin","level":"warn","message":"Unauthorized access attempt: Not a Student","timestamp":"2026-07-01T22:26:05.284Z","userEmail":"admin@sanabel.local"}
+{"duration":1,"level":"warn","message":"<-- GET /students/data 403 1ms","method":"GET","status":403,"timestamp":"2026-07-01T22:26:05.285Z","url":"/students/data"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:26:05.287Z"}
+{"duration":3,"level":"info","message":"<-- GET /admin/me 200 3ms","method":"GET","status":200,"timestamp":"2026-07-01T22:26:05.290Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:26:09.563Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/me 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T22:26:09.565Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:26:09.566Z"}
+{"duration":1,"level":"info","message":"<-- GET /admin/me 304 1ms","method":"GET","status":304,"timestamp":"2026-07-01T22:26:09.567Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/users?page=1&limit=25","timestamp":"2026-07-01T22:26:09.983Z"}
+{"duration":4,"level":"info","message":"<-- GET /admin/users?page=1&limit=25 200 4ms","method":"GET","status":200,"timestamp":"2026-07-01T22:26:09.987Z","url":"/admin/users?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/classes?page=1&limit=25","timestamp":"2026-07-01T22:26:11.883Z"}
+{"duration":4,"level":"info","message":"<-- GET /admin/classes?page=1&limit=25 200 4ms","method":"GET","status":200,"timestamp":"2026-07-01T22:26:11.887Z","url":"/admin/classes?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?page=1&limit=25","timestamp":"2026-07-01T22:26:12.958Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?page=1&limit=25 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:26:12.960Z","url":"/admin/organizations?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?limit=1000","timestamp":"2026-07-01T22:26:13.716Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?limit=1000 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:26:13.718Z","url":"/admin/organizations?limit=1000"}
+{"ip":"::1","level":"info","message":"--> PATCH /admin/organizations/1","timestamp":"2026-07-01T22:26:14.312Z"}
+{"duration":2,"level":"info","message":"<-- PATCH /admin/organizations/1 200 2ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:26:14.314Z","url":"/admin/organizations/1"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?page=1&limit=25&search=edited+org+name+test","timestamp":"2026-07-01T22:26:14.327Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?page=1&limit=25&search=edited+org+name+test 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:26:14.329Z","url":"/admin/organizations?page=1&limit=25&search=edited+org+name+test"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?page=1&limit=25&search=edited+org+name+test","timestamp":"2026-07-01T22:26:14.586Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?page=1&limit=25&search=edited+org+name+test 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T22:26:14.588Z","url":"/admin/organizations?page=1&limit=25&search=edited+org+name+test"}
+{"ip":"::1","level":"info","message":"--> GET /admin/students?page=1&limit=25","timestamp":"2026-07-01T22:26:15.707Z"}
+{"duration":5,"level":"info","message":"<-- GET /admin/students?page=1&limit=25 200 5ms","method":"GET","status":200,"timestamp":"2026-07-01T22:26:15.712Z","url":"/admin/students?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?limit=1000","timestamp":"2026-07-01T22:26:16.433Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?limit=1000 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T22:26:16.435Z","url":"/admin/organizations?limit=1000"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:28:07.409Z"}
+{"duration":66,"level":"info","message":"<-- PATCH /users/login 200 66ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:28:07.475Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /admin/organizations/1","timestamp":"2026-07-01T22:28:07.511Z"}
+{"duration":4,"level":"info","message":"<-- GET /admin/organizations/1 200 4ms","method":"GET","status":200,"timestamp":"2026-07-01T22:28:07.515Z","url":"/admin/organizations/1"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T22:36:58.179Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T22:36:59.384Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T22:36:59.384Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T22:36:59.408Z"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T22:39:08.993Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T22:39:08.998Z"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-07-01T22:42:41.708Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-07-01T22:42:43.069Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-07-01T22:42:43.069Z"}
+{"level":"info","message":"✅ Successfully connected to our DB","timestamp":"2026-07-01T22:42:43.101Z"}
+{"level":"info","message":"Database & models table created/updated!","timestamp":"2026-07-01T22:44:56.250Z"}
+{"email":"admin@sanabel.local","level":"info","message":"Admin user already exists, skipping seeding","timestamp":"2026-07-01T22:44:56.255Z"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> GET /","timestamp":"2026-07-01T22:45:26.028Z"}
+{"duration":3,"level":"info","message":"<-- GET / 200 3ms","method":"GET","status":200,"timestamp":"2026-07-01T22:45:26.031Z","url":"/"}
+{"ip":"::1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:46:03.529Z"}
+{"duration":65,"level":"info","message":"<-- PATCH /users/login 200 65ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:46:03.594Z","url":"/users/login"}
+{"ip":"::1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T22:46:03.598Z"}
+{"actualRole":"Admin","level":"warn","message":"Unauthorized access attempt: Not a Student","timestamp":"2026-07-01T22:46:03.599Z","userEmail":"admin@sanabel.local"}
+{"duration":2,"level":"warn","message":"<-- GET /students/data 403 2ms","method":"GET","status":403,"timestamp":"2026-07-01T22:46:03.599Z","url":"/students/data"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:46:03.604Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/me 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:46:03.606Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:46:07.875Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/me 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T22:46:07.877Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:46:07.878Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/me 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T22:46:07.880Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/users?page=1&limit=25","timestamp":"2026-07-01T22:46:08.295Z"}
+{"duration":4,"level":"info","message":"<-- GET /admin/users?page=1&limit=25 200 4ms","method":"GET","status":200,"timestamp":"2026-07-01T22:46:08.299Z","url":"/admin/users?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?page=1&limit=25","timestamp":"2026-07-01T22:46:10.164Z"}
+{"duration":9,"level":"info","message":"<-- GET /admin/organizations?page=1&limit=25 200 9ms","method":"GET","status":200,"timestamp":"2026-07-01T22:46:10.173Z","url":"/admin/organizations?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?limit=1000","timestamp":"2026-07-01T22:46:10.732Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?limit=1000 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:46:10.734Z","url":"/admin/organizations?limit=1000"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?page=1&limit=25&search=test+org+1782945971268","timestamp":"2026-07-01T22:46:11.587Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?page=1&limit=25&search=test+org+1782945971268 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:46:11.589Z","url":"/admin/organizations?page=1&limit=25&search=test+org+1782945971268"}
+{"ip":"::1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:47:41.949Z"}
+{"duration":68,"level":"info","message":"<-- PATCH /users/login 200 68ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:47:42.017Z","url":"/users/login"}
+{"ip":"::1","level":"info","message":"--> GET /students/data","timestamp":"2026-07-01T22:47:42.020Z"}
+{"actualRole":"Admin","level":"warn","message":"Unauthorized access attempt: Not a Student","timestamp":"2026-07-01T22:47:42.020Z","userEmail":"admin@sanabel.local"}
+{"duration":1,"level":"warn","message":"<-- GET /students/data 403 1ms","method":"GET","status":403,"timestamp":"2026-07-01T22:47:42.021Z","url":"/students/data"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:47:42.023Z"}
+{"duration":1,"level":"info","message":"<-- GET /admin/me 200 1ms","method":"GET","status":200,"timestamp":"2026-07-01T22:47:42.024Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:47:46.285Z"}
+{"duration":3,"level":"info","message":"<-- GET /admin/me 304 3ms","method":"GET","status":304,"timestamp":"2026-07-01T22:47:46.287Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/me","timestamp":"2026-07-01T22:47:46.287Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/me 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T22:47:46.289Z","url":"/admin/me"}
+{"ip":"::1","level":"info","message":"--> GET /admin/users?page=1&limit=25","timestamp":"2026-07-01T22:47:46.697Z"}
+{"duration":3,"level":"info","message":"<-- GET /admin/users?page=1&limit=25 200 3ms","method":"GET","status":200,"timestamp":"2026-07-01T22:47:46.700Z","url":"/admin/users?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?page=1&limit=25","timestamp":"2026-07-01T22:47:48.564Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?page=1&limit=25 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:47:48.567Z","url":"/admin/organizations?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?limit=1000","timestamp":"2026-07-01T22:47:49.078Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?limit=1000 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:47:49.080Z","url":"/admin/organizations?limit=1000"}
+{"ip":"::1","level":"info","message":"--> POST /admin/organizations","timestamp":"2026-07-01T22:47:49.727Z"}
+{"duration":15,"level":"info","message":"<-- POST /admin/organizations 201 15ms","method":"POST","status":201,"timestamp":"2026-07-01T22:47:49.742Z","url":"/admin/organizations"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?page=1&limit=25","timestamp":"2026-07-01T22:47:49.744Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?page=1&limit=25 200 2ms","method":"GET","status":200,"timestamp":"2026-07-01T22:47:49.746Z","url":"/admin/organizations?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/classes?page=1&limit=25","timestamp":"2026-07-01T22:47:51.323Z"}
+{"duration":7,"level":"info","message":"<-- GET /admin/classes?page=1&limit=25 200 7ms","method":"GET","status":200,"timestamp":"2026-07-01T22:47:51.330Z","url":"/admin/classes?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?limit=1000","timestamp":"2026-07-01T22:47:51.862Z"}
+{"duration":1,"level":"info","message":"<-- GET /admin/organizations?limit=1000 200 1ms","method":"GET","status":200,"timestamp":"2026-07-01T22:47:51.863Z","url":"/admin/organizations?limit=1000"}
+{"ip":"::1","level":"info","message":"--> POST /admin/classes","timestamp":"2026-07-01T22:47:52.510Z"}
+{"duration":8,"level":"info","message":"<-- POST /admin/classes 201 8ms","method":"POST","status":201,"timestamp":"2026-07-01T22:47:52.518Z","url":"/admin/classes"}
+{"ip":"::1","level":"info","message":"--> GET /admin/classes?page=1&limit=25","timestamp":"2026-07-01T22:47:52.523Z"}
+{"duration":4,"level":"info","message":"<-- GET /admin/classes?page=1&limit=25 200 4ms","method":"GET","status":200,"timestamp":"2026-07-01T22:47:52.527Z","url":"/admin/classes?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/students?page=1&limit=25","timestamp":"2026-07-01T22:47:54.104Z"}
+{"duration":5,"level":"info","message":"<-- GET /admin/students?page=1&limit=25 200 5ms","method":"GET","status":200,"timestamp":"2026-07-01T22:47:54.109Z","url":"/admin/students?page=1&limit=25"}
+{"ip":"::1","level":"info","message":"--> GET /admin/organizations?limit=1000","timestamp":"2026-07-01T22:47:54.645Z"}
+{"duration":2,"level":"info","message":"<-- GET /admin/organizations?limit=1000 304 2ms","method":"GET","status":304,"timestamp":"2026-07-01T22:47:54.647Z","url":"/admin/organizations?limit=1000"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /users/login","timestamp":"2026-07-01T22:48:16.216Z"}
+{"duration":1,"level":"warn","message":"<-- POST /users/login 404 1ms","method":"POST","status":404,"timestamp":"2026-07-01T22:48:16.217Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> POST /users/login","timestamp":"2026-07-01T22:48:21.624Z"}
+{"duration":1,"level":"warn","message":"<-- POST /users/login 404 1ms","method":"POST","status":404,"timestamp":"2026-07-01T22:48:21.625Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:48:35.434Z"}
+{"duration":59,"level":"info","message":"<-- PATCH /users/login 200 59ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:48:35.493Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> DELETE /admin/classes/170","timestamp":"2026-07-01T22:48:35.529Z"}
+{"duration":1,"level":"warn","message":"<-- DELETE /admin/classes/170 403 1ms","method":"DELETE","status":403,"timestamp":"2026-07-01T22:48:35.530Z","url":"/admin/classes/170"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> DELETE /admin/organizations/6","timestamp":"2026-07-01T22:48:35.560Z"}
+{"duration":1,"level":"warn","message":"<-- DELETE /admin/organizations/6 403 1ms","method":"DELETE","status":403,"timestamp":"2026-07-01T22:48:35.561Z","url":"/admin/organizations/6"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:48:41.598Z"}
+{"duration":56,"level":"info","message":"<-- PATCH /users/login 200 56ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:48:41.654Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> PATCH /users/login","timestamp":"2026-07-01T22:48:50.329Z"}
+{"duration":56,"level":"info","message":"<-- PATCH /users/login 200 56ms","method":"PATCH","status":200,"timestamp":"2026-07-01T22:48:50.385Z","url":"/users/login"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> DELETE /admin/classes/170","timestamp":"2026-07-01T22:48:50.420Z"}
+{"duration":14,"level":"info","message":"<-- DELETE /admin/classes/170 200 14ms","method":"DELETE","status":200,"timestamp":"2026-07-01T22:48:50.434Z","url":"/admin/classes/170"}
+{"ip":"::ffff:127.0.0.1","level":"info","message":"--> DELETE /admin/organizations/6","timestamp":"2026-07-01T22:48:50.463Z"}
+{"duration":19,"level":"info","message":"<-- DELETE /admin/organizations/6 200 19ms","method":"DELETE","status":200,"timestamp":"2026-07-01T22:48:50.482Z","url":"/admin/organizations/6"}

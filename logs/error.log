@@ -10,3 +10,5 @@
 {"duration":1047,"level":"error","message":"<-- POST /users/send-auth 500 1047ms","method":"POST","status":500,"timestamp":"2026-07-01T13:43:51.758Z","url":"/users/send-auth"}
 {"duration":6,"level":"error","message":"<-- POST /users/send-auth 500 6ms","method":"POST","status":500,"timestamp":"2026-07-01T13:44:09.014Z","url":"/users/send-auth"}
 {"error":{"name":"SequelizeDatabaseError","parameters":{},"sql":"ALTER TABLE `Parents` CHANGE `createdAt` `createdAt` DATETIME(6) NOT NULL;"},"level":"error","message":"Unable to connect to the database schema:","timestamp":"2026-07-01T14:13:17.159Z"}
+{"error":{"name":"SequelizeDatabaseError","parameters":{},"sql":"ALTER TABLE `Parents` CHANGE `createdAt` `createdAt` DATETIME(6) NOT NULL;"},"level":"error","message":"Unable to connect to the database schema:","timestamp":"2026-07-01T21:59:17.034Z"}
+{"error":{"name":"SequelizeDatabaseError","parameters":{},"sql":"ALTER TABLE `Parents` CHANGE `createdAt` `createdAt` DATETIME(6) NOT NULL;"},"level":"error","message":"Unable to connect to the database schema:","timestamp":"2026-07-01T22:01:10.492Z"}

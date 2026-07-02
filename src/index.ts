@@ -41,7 +41,7 @@ app.use(express.json());
 app.use(requestLogger);
 
 // Serve static assets (used in email templates to avoid base64 bloat)
-app.use("/assets", express.static(require("path").resolve(__dirname, "../../assets")));
+app.use("/assets", express.static(require("path").resolve(__dirname, "../assets")));
 
 
 // Define routes
