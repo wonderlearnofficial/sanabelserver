@@ -993,7 +993,12 @@ const buyWaterSeeder = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Add some seeders or water first" });
     }
 
-    const totalRed = 20 * water + 30 * seeders;
+    // Must match the client's per-unit pricing in Shop.tsx (waterCost/fertilizerCost),
+    // which discounts the first tree stage — otherwise the amount charged here
+    // silently diverges from what the confirmation popup showed the student.
+    const waterCost = student.treeProgress === 1 ? 10 : 20;
+    const seederCost = student.treeProgress === 1 ? 15 : 30;
+    const totalRed = waterCost * water + seederCost * seeders;
     const totalBlue = totalRed;
     const totalYellow = totalRed;
 
