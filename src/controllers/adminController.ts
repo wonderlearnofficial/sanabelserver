@@ -416,7 +416,7 @@ const updateStudent = async (req: Request, res: Response) => {
     if (profileImg && typeof profileImg === "object") userUpdateData.profileImg = profileImg;
 
     const studentUpdateData: Record<string, any> = {};
-    if (grade) studentUpdateData.grade = grade;
+    if (grade !== undefined) studentUpdateData.grade = grade === "" ? null : grade;
     if (organizationId !== undefined) {
       studentUpdateData.organizationId = resultingOrganizationId;
       // If organization is cleared, also clear classId
@@ -758,7 +758,7 @@ const updateUser = async (req: Request, res: Response) => {
       }
 
       const studentUpdateData: Record<string, any> = {};
-      if (grade) studentUpdateData.grade = grade;
+      if (grade !== undefined) studentUpdateData.grade = grade === "" ? null : grade;
       if (organizationId !== undefined) {
         studentUpdateData.organizationId = resultingOrganizationId;
         // If organization is cleared, also clear classId
