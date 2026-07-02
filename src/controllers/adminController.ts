@@ -381,17 +381,24 @@ const updateStudent = async (req: Request, res: Response) => {
     }
 
     const resultingOrganizationId =
-      organizationId !== undefined ? Number(organizationId) : student.organizationId;
+      organizationId !== undefined
+        ? (organizationId === null || organizationId === "" ? null : Number(organizationId))
+        : student.organizationId;
 
-    if (organizationId !== undefined) {
+    if (organizationId !== undefined && resultingOrganizationId !== null) {
       const organization = await Organization.findByPk(resultingOrganizationId);
       if (!organization) {
         return res.status(400).json({ message: "Target organization does not exist" });
       }
     }
 
-    if (classId !== undefined) {
-      const targetClass = await Class.findByPk(Number(classId));
+    const resultingClassId =
+      classId !== undefined
+        ? (classId === null || classId === "" ? null : Number(classId))
+        : undefined;
+
+    if (resultingClassId !== undefined && resultingClassId !== null) {
+      const targetClass = await Class.findByPk(resultingClassId);
       if (!targetClass) {
         return res.status(400).json({ message: "Target class does not exist" });
       }
@@ -410,8 +417,12 @@ const updateStudent = async (req: Request, res: Response) => {
 
     const studentUpdateData: Record<string, any> = {};
     if (grade) studentUpdateData.grade = grade;
-    if (organizationId !== undefined) studentUpdateData.organizationId = resultingOrganizationId;
-    if (classId !== undefined) studentUpdateData.classId = Number(classId);
+    if (organizationId !== undefined) {
+      studentUpdateData.organizationId = resultingOrganizationId;
+      // If organization is cleared, also clear classId
+      if (resultingOrganizationId === null) studentUpdateData.classId = null;
+    }
+    if (resultingClassId !== undefined) studentUpdateData.classId = resultingClassId;
 
     if (Object.keys(userUpdateData).length > 0) {
       await userRecord.update(userUpdateData);
@@ -725,9 +736,11 @@ const updateUser = async (req: Request, res: Response) => {
       }
 
       const resultingOrganizationId =
-        organizationId !== undefined ? Number(organizationId) : student.organizationId;
+        organizationId !== undefined
+          ? (organizationId === null || organizationId === "" ? null : Number(organizationId))
+          : student.organizationId;
 
-      if (organizationId !== undefined) {
+      if (organizationId !== undefined && resultingOrganizationId !== null) {
         const organization = await Organization.findByPk(resultingOrganizationId);
         if (!organization) {
           return res.status(400).json({ message: "Target organization does not exist" });
@@ -746,8 +759,14 @@ const updateUser = async (req: Request, res: Response) => {
 
       const studentUpdateData: Record<string, any> = {};
       if (grade) studentUpdateData.grade = grade;
-      if (organizationId !== undefined) studentUpdateData.organizationId = resultingOrganizationId;
-      if (classId !== undefined) studentUpdateData.classId = classId === "" ? null : Number(classId);
+      if (organizationId !== undefined) {
+        studentUpdateData.organizationId = resultingOrganizationId;
+        // If organization is cleared, also clear classId
+        if (resultingOrganizationId === null) {
+          studentUpdateData.classId = null;
+        }
+      }
+      if (classId !== undefined) studentUpdateData.classId = classId === "" ? null : (classId === null ? null : Number(classId));
 
       if (Object.keys(studentUpdateData).length > 0) {
         await student.update(studentUpdateData);
@@ -757,11 +776,15 @@ const updateUser = async (req: Request, res: Response) => {
       if (!teacher) {
         return res.status(404).json({ message: "Teacher record not found for this user" });
       }
-      const organization = await Organization.findByPk(Number(organizationId));
-      if (!organization) {
-        return res.status(400).json({ message: "Target organization does not exist" });
+      if (organizationId === null || organizationId === "") {
+        await teacher.update({ organizationId: null });
+      } else {
+        const organization = await Organization.findByPk(Number(organizationId));
+        if (!organization) {
+          return res.status(400).json({ message: "Target organization does not exist" });
+        }
+        await teacher.update({ organizationId: organization.id });
       }
-      await teacher.update({ organizationId: organization.id });
     }
 
     if (Object.keys(userUpdateData).length > 0) {
