@@ -847,17 +847,19 @@ const addTeacher = async (req: Request, res: Response) => {
           // Best-effort email — a delivery failure shouldn't undo (or mark
           // failed) an account that was already created, since the password
           // is a known default rather than something only the email reveals.
+          let emailSent = false;
           try {
             await sendEmail({
               to: email,
               subject: "Your Teacher Account in Snabel elahssan",
               text: `Hello ${firstName},\n\nYour teacher account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nPlease log in and change your password immediately.`,
             });
+            emailSent = true;
           } catch (emailError) {
             logger.error("Failed to send onboarding email (non-blocking):", { emailError, email });
           }
 
-          successfulEntries.push({ row: data, message: "Teacher added successfully", teacherId: new_teacher.id });
+          successfulEntries.push({ row: data, message: "Teacher added successfully", teacherId: new_teacher.id, emailSent });
         } catch (error) {
           failedEntries.push({
             row: data,

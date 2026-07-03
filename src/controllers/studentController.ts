@@ -1330,13 +1330,16 @@ const addStudent = async (req: Request, res: Response) => {
           // ✅ Best-effort email — a delivery failure shouldn't undo (or
           // mark failed) an account that was already created, since the
           // password is a known default rather than something only the
-          // email reveals.
+          // email reveals. Tracked per-row so the organizer can see which
+          // accounts may need their credentials shared another way.
+          let emailSent = false;
           try {
             await sendEmail({
               to: email,
               subject: "Your account in Snabel elahssan",
               text: `Your email is ${email}, and your password is ${password}`,
             });
+            emailSent = true;
           } catch (emailError) {
             logger.error("Failed to send onboarding email (non-blocking):", { emailError, email });
           }
@@ -1358,6 +1361,7 @@ const addStudent = async (req: Request, res: Response) => {
             message: "Student added successfully",
             studentId: new_student.id,
             connectCode,
+            emailSent,
           });
         } catch (error) {
           failedEntries.push({
