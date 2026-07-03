@@ -322,7 +322,9 @@ const denyRequestAsTeacher = async (req: Request, res: Response) => {
 // ── Student: am I even able to request approval right now? ─────────────────
 // A student-level check (independent of any specific mission) so the client
 // can show "Link Parent" upfront instead of only discovering the lack of an
-// approver after tapping Request Approval.
+// approver after tapping Request Approval. Names are included so the
+// confirmation dialog can tell the student who they're actually sending the
+// request to, instead of a generic "your parent or teacher".
 const getMyApprovers = async (req: Request, res: Response) => {
   try {
     const user = (req as Request & { user?: JwtPayload }).user;
@@ -331,10 +333,38 @@ const getMyApprovers = async (req: Request, res: Response) => {
     if (!student) return res.status(404).json({ message: "Student not found" });
 
     const { parentIds, teacherIds } = await getEligibleApprovers(student);
+
+    const [parents, teachers] = await Promise.all([
+      parentIds.length > 0
+        ? Parent.findAll({
+            where: { id: parentIds },
+            include: [{ model: User, as: "User", attributes: ["firstName", "lastName"] }],
+          })
+        : [],
+      teacherIds.length > 0
+        ? Teacher.findAll({
+            where: { id: teacherIds },
+            include: [{ model: User, as: "User", attributes: ["firstName", "lastName"] }],
+          })
+        : [],
+    ]);
+
+    const approvers = [
+      ...parents.map((p: any) => ({
+        type: "parent",
+        name: `${p.User?.firstName || ""} ${p.User?.lastName || ""}`.trim(),
+      })),
+      ...teachers.map((t: any) => ({
+        type: "teacher",
+        name: `${t.User?.firstName || ""} ${t.User?.lastName || ""}`.trim(),
+      })),
+    ];
+
     return res.status(200).json({
       data: {
         hasParent: parentIds.length > 0,
         hasTeacher: teacherIds.length > 0,
+        approvers,
       },
     });
   } catch (error) {

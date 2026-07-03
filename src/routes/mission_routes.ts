@@ -79,6 +79,6 @@ router.get("/myRequestStatus", authenticateToken, checkstudent, getMyRequestStat
  *       - bearerAuth: []
  *     responses:
  *       200:
- *         description: "{ hasParent: boolean, hasTeacher: boolean }"
+ *         description: "{ hasParent: boolean, hasTeacher: boolean, approvers: { type: 'parent'|'teacher', name: string }[] }"
  */
 router.get("/myApprovers", authenticateToken, checkstudent, getMyApprovers);
