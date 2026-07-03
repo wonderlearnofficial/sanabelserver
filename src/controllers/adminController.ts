@@ -20,7 +20,7 @@ import { QueryTypes } from "sequelize";
 import { generatePassword } from "../helpers/generatePassword";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
 
-const DEFAULT_RESET_PASSWORD = "Test1234!";
+const DEFAULT_RESET_PASSWORD = "changeme123";
 
 const getAdminProfile = async (req: Request, res: Response) => {
   const user = (req as Request & { user: JwtPayload | undefined }).user;
