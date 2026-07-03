@@ -26,6 +26,11 @@ import {
   appearTaskesType,
 } from "../controllers/studentController";
 import {  processTeacherMiddleware } from "../middleware/processExcelfile";
+import {
+  listPendingRequestsForTeacher,
+  approveRequestAsTeacher,
+  denyRequestAsTeacher,
+} from "../controllers/missionController";
 const upload = multer({ dest: "uploads/" });
 
 export const router = require("express").Router();
@@ -1140,3 +1145,71 @@ router.get("/class-grades",  authenticateToken, checkTeacher,appearClassGrade);
  */
 
 router.get("/classes-by-grade" ,authenticateToken, checkTeacher, getClassesByGrade);
+
+/**
+ * @swagger
+ * /teachers/pendingRequests:
+ *   get:
+ *     summary: List this teacher's pending mission approval requests
+ *     tags: [Teachers]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of pending requests for students in this teacher's organization
+ */
+router.get("/pendingRequests", authenticateToken, checkTeacher, listPendingRequestsForTeacher);
+
+/**
+ * @swagger
+ * /teachers/approveRequest:
+ *   post:
+ *     summary: Approve a pending mission approval request
+ *     tags: [Teachers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               requestId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Approved — mission completed and rewards granted
+ *       403:
+ *         description: This teacher is not an eligible approver for this request
+ *       409:
+ *         description: Already resolved by another approver
+ */
+router.post("/approveRequest", authenticateToken, checkTeacher, approveRequestAsTeacher);
+
+/**
+ * @swagger
+ * /teachers/denyRequest:
+ *   post:
+ *     summary: Deny a pending mission approval request
+ *     tags: [Teachers]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               requestId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Denied
+ *       403:
+ *         description: This teacher is not an eligible approver for this request
+ *       409:
+ *         description: Already resolved by another approver
+ */
+router.post("/denyRequest", authenticateToken, checkTeacher, denyRequestAsTeacher);

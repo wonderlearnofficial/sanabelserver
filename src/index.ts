@@ -18,6 +18,7 @@ import { router as class_routes } from "./routes/class_routes";
 import { router as teacher_routes } from "./routes/teacher_routes";
 import { router as parent_route } from "./routes/parent_routes";
 import { router as admin_routes } from "./routes/admin_routes";
+import { router as mission_routes } from "./routes/mission_routes";
 import { router as dev_routes } from "./routes/dev_routes";
 import logger from "./config/logger";
 import requestLogger from "./middleware/requestLogger";
@@ -54,6 +55,7 @@ app.use("/parents", parent_route);
 app.use("/class", class_routes);
 app.use("/teachers", teacher_routes);
 app.use("/admin", admin_routes);
+app.use("/mission", mission_routes);
 
 // Dev-only "log in as any user" tool — never mounted in production, so the
 // route doesn't exist at all outside local development (the controller also

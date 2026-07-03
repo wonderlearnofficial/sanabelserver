@@ -20,6 +20,7 @@ import StudentChallenge from "../models/student-challenge.model";
 import Groupe from "../models/groupe.model";
 import TaskCategory from "../models/task-category.model";
 import Tree from "../models/tree.model";
+import MissionApprovalRequest from "../models/mission-approval-request.model";
 
 // Seeder data
 import seedAdmin from "../seeders/admin-seeder";
@@ -86,6 +87,7 @@ const rundb = async () => {
     Groupe,
 
     Tree,
+    MissionApprovalRequest,
   };
   Object.values(models).forEach((model) => {
     model.initModel(sequelize);

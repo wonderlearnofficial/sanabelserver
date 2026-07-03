@@ -16,6 +16,11 @@ import {
   appearTaskesType,
 } from "../controllers/studentController";
 import { appearTaskesTypeandCategories } from "../controllers/teacherController";
+import {
+  listPendingRequestsForParent,
+  approveRequestAsParent,
+  denyRequestAsParent,
+} from "../controllers/missionController";
 
 export const router = require("express").Router();
 
@@ -450,4 +455,72 @@ router.delete("/delete-parent", authenticateToken, checkparent, deleteData);
 
 router.post("/add-pros", authenticateToken, checkparent, addPros);
 router.get("/appear-leaderboard", authenticateToken, checkparent, parentLeaderboard);
+
+/**
+ * @swagger
+ * /parents/pendingRequests:
+ *   get:
+ *     summary: List this parent's pending mission approval requests
+ *     tags: [Parents]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200:
+ *         description: List of pending requests for this parent's linked children
+ */
+router.get("/pendingRequests", authenticateToken, checkparent, listPendingRequestsForParent);
+
+/**
+ * @swagger
+ * /parents/approveRequest:
+ *   post:
+ *     summary: Approve a pending mission approval request
+ *     tags: [Parents]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               requestId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Approved — mission completed and rewards granted
+ *       403:
+ *         description: This parent is not an eligible approver for this request
+ *       409:
+ *         description: Already resolved by another approver
+ */
+router.post("/approveRequest", authenticateToken, checkparent, approveRequestAsParent);
+
+/**
+ * @swagger
+ * /parents/denyRequest:
+ *   post:
+ *     summary: Deny a pending mission approval request
+ *     tags: [Parents]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               requestId:
+ *                 type: integer
+ *     responses:
+ *       200:
+ *         description: Denied
+ *       403:
+ *         description: This parent is not an eligible approver for this request
+ *       409:
+ *         description: Already resolved by another approver
+ */
+router.post("/denyRequest", authenticateToken, checkparent, denyRequestAsParent);
 router.get("/appear-student-deatiled/:studentId", authenticateToken, checkparent, appearStudentInDetails);
