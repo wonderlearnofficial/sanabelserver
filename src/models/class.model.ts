@@ -10,9 +10,12 @@ class Class extends Model {
   declare classdescrption: CreationOptional<String>; // Description of the class
   declare grade: CreationOptional<String>; // Grade level of the class (primary/preparatory/secondary)
   declare category: CreationOptional<String>; // Category of the class
+  declare gradeId: CreationOptional<number>; // Grade ID
+  declare GradeEntity: any;
   static associate(models: any) {
     Class.belongsTo(models.Teacher, { foreignKey: "teacherId", as: "Teachers" });
     Class.belongsTo(models.Organization, { foreignKey: "organizationId", as: "Organization" });
+    Class.belongsTo(models.Grade, { foreignKey: "gradeId", as: "GradeEntity" });
   
     Class.hasMany(models.Student, { foreignKey: "classId", as: "Students" });
   }
@@ -40,6 +43,10 @@ class Class extends Model {
         },
         category: {
           type: DataTypes.STRING,
+          allowNull: true,
+        },
+        gradeId: {
+          type: DataTypes.INTEGER,
           allowNull: true,
         },
       },

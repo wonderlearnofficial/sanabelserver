@@ -7,6 +7,7 @@ import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
 import Representative from "../models/representative.model";
 import Class from "../models/class.model";
+import Grade from "../models/grade.model";
 import Organization from "../models/oraganization.model";
 import bcrypt from "bcryptjs";
 import generateOTP from "../helpers/generateOtp";
@@ -132,6 +133,7 @@ const registration = async (req: Request, res: Response) => {
       role,
       dateOfBirth,
       gender,
+      gradeId,
       grade,
       profileImg,
     } = req.body;
@@ -184,9 +186,21 @@ const registration = async (req: Request, res: Response) => {
     switch (checkValidation.role) {
       case "Student":
         const connectCode = await generateUniqueConnectCode();
+        let resolvedGradeId: number | undefined;
+        let resolvedGradeName: string | undefined = grade;
+
+        if (gradeId !== undefined && gradeId !== "" && gradeId !== null) {
+          const gradeRecord = await Grade.findByPk(Number(gradeId));
+          if (gradeRecord) {
+            resolvedGradeId = gradeRecord.id;
+            resolvedGradeName = gradeRecord.name;
+          }
+        }
+
         // Create student first
         const newStudent = await Student.create({
-          grade,
+          gradeId: resolvedGradeId,
+          grade: resolvedGradeName || "",
           userId: checkValidation.id,
           profileImg,
           treeProgress: 1,

@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import Organization from "../models/oraganization.model";
 import Class from "../models/class.model";
+import Grade from "../models/grade.model";
 import logger from "../config/logger";
 
 const createClassByExcel = async (req: Request, res: Response) => {
@@ -48,6 +49,12 @@ const createClassByExcel = async (req: Request, res: Response) => {
           }
 
 
+          const gradeName = String(grade).trim().toLowerCase();
+          const [gradeRecord] = await Grade.findOrCreate({
+            where: { name: gradeName },
+            defaults: { name: gradeName }
+          });
+
           // Normalize classNames to array if it's a string
           if (!Array.isArray(classNames)) {
             if (typeof classNames === "string") {
@@ -68,13 +75,13 @@ const createClassByExcel = async (req: Request, res: Response) => {
             const existing = await Class.findOne({
               where: {
                 classname: className.trim().toLowerCase(),
-                grade: grade.trim().toLowerCase(),
+                gradeId: gradeRecord.id,
                 organizationId: organization.id,
               },
             });
 
             if (existing) {
-              logger.info(`Class "${className}" already exists in grade "${grade}" for school "${schoolName}". Skipping.`);
+              logger.info(`Class "${className}" already exists in grade "${gradeName}" for school "${schoolName}". Skipping.`);
               continue;
             }
 
@@ -83,10 +90,11 @@ const createClassByExcel = async (req: Request, res: Response) => {
               await Class.create({
                 classname: className.trim().toLowerCase(),
                 classdescrption: "Description not provided",
-                grade: grade.trim().toLowerCase(),
+                gradeId: gradeRecord.id,
+                grade: gradeRecord.name,
                 organizationId: organization.id,
               });
-              logger.info(`Created class "${className}" in grade "${grade}" for "${schoolName}"`);
+              logger.info(`Created class "${className}" in grade "${gradeName}" for "${schoolName}"`);
             } catch (err) {
               logger.error(`Failed to create class "${className}":`, { error: err });
             }

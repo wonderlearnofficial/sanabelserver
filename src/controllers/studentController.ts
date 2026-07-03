@@ -11,6 +11,7 @@ import StudentChallenge from "../models/student-challenge.model";
 import Challenge from "../models/challenge.model";
 import Organization from "../models/oraganization.model";
 import Class from "../models/class.model";
+import Grade from "../models/grade.model";
 import { generatePassword } from "../helpers/generatePassword";
 import { sendEmail } from "../helpers/sendEmail";
 import ExcelJS from "exceljs";
@@ -1255,11 +1256,14 @@ const addStudent = async (req: Request, res: Response) => {
           const { worksheet } = organizationFiles[organization.name];
 
           // ✅ Find Class
+          const gradeName = String(data.Grade || "").trim().toLowerCase();
+          const gradeRecord = await Grade.findOne({ where: { name: gradeName } });
+
           const class_data = await Class.findOne({
             where: {
               organizationId: organization.id,
               classname: data.ClassName,
-              grade: data.Grade,
+              ...(gradeRecord ? { gradeId: gradeRecord.id } : { grade: data.Grade }),
             },
           });
           if (!class_data) {
@@ -1296,6 +1300,7 @@ const addStudent = async (req: Request, res: Response) => {
           const new_student = await Student.create({
             connectCode,
             treeProgress: 1,
+            gradeId: gradeRecord ? gradeRecord.id : null,
             grade: data.Grade,
             userId: new_user.id,
             organizationId: organization.id,

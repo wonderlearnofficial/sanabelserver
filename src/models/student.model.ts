@@ -35,6 +35,9 @@ class Student extends Model {
   declare snabelBlue: CreationOptional<number>;
   declare snabelYellow: CreationOptional<number>;
   declare treeProgress: CreationOptional<number>;
+  declare gradeId: CreationOptional<number>;
+  declare grade: CreationOptional<String>;
+  declare GradeEntity: any;
   static associate(models: any) {
     Student.belongsTo(User, { foreignKey: "userId", as: "User" });
     Student.belongsTo(Parent, { foreignKey: "ParentId", as: "Parent" });
@@ -42,6 +45,7 @@ class Student extends Model {
     Student.belongsTo(Class, { foreignKey: "classId", as: "Class" });
     Student.belongsTo(Tree, { foreignKey: "treeProgress", as: "Tree" });
     Student.belongsTo(Groupe, { foreignKey: "groupeId", as: "Groupe" });
+    Student.belongsTo(models.Grade, { foreignKey: "gradeId", as: "GradeEntity" });
  
   
     Student.belongsToMany(Task, {
@@ -71,6 +75,10 @@ class Student extends Model {
         },
         grade: {
           type: DataTypes.STRING,
+          allowNull: true,
+        },
+        gradeId: {
+          type: DataTypes.INTEGER,
           allowNull: true,
         },
         medal: {

@@ -14,6 +14,7 @@ import StudentTask from "../models/student-task.model";
 import Task from "../models/task.model";
 import Challenge from "../models/challenge.model";
 import Class from "../models/class.model"
+import Grade from "../models/grade.model";
 import Organization from "../models/oraganization.model";
 import StudentChallenge, { CompletionStatus } from "../models/student-challenge.model";
 
@@ -191,10 +192,18 @@ const appearStudentbyparent = async (req: Request, res: Response) => {
               as: "user", // use the alias defined in the association
               attributes: ["firstName", "lastName", "email","profileImg","gender","dateOfBirth"],
             },
-            {model: Class,
-              as: "class",
-              attributes: ["id", "classname",'grade'],
-            }
+             {model: Class,
+               as: "class",
+               attributes: ["id", "classname",'grade', 'gradeId'],
+               include: [
+                 {
+                   model: Grade,
+                   as: "GradeEntity",
+                   attributes: ["id", "name"],
+                   required: false,
+                 }
+               ]
+             }
             ,{model: Organization,
               as: "organization",
               attributes: ["id", "name"],
@@ -451,7 +460,15 @@ const addPros = async (req: Request, res: Response) => {
           },
           {model: Class,
             as: "class",
-            attributes: ["id", "classname",'grade'],
+            attributes: ["id", "classname",'grade', 'gradeId'],
+            include: [
+              {
+                model: Grade,
+                as: "GradeEntity",
+                attributes: ["id", "name"],
+                required: false,
+              }
+            ]
           }
           ,{model: Organization,
             as: "organization",

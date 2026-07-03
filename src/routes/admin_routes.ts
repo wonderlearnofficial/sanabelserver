@@ -199,3 +199,8 @@ router.post("/classes", authenticateToken, checkAdmin, adminController.createCla
  */
 router.patch("/classes/:classId", authenticateToken, checkAdmin, adminController.updateClass);
 router.delete("/classes/:classId", authenticateToken, checkAdmin, adminController.deleteClass);
+
+router.get("/grades", authenticateToken, checkAdmin, adminController.listGrades);
+router.post("/grades", authenticateToken, checkAdmin, adminController.createGrade);
+router.patch("/grades/:gradeId", authenticateToken, checkAdmin, adminController.updateGrade);
+router.delete("/grades/:gradeId", authenticateToken, checkAdmin, adminController.deleteGrade);

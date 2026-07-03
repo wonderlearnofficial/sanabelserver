@@ -7,6 +7,7 @@ import Student from "../models/student.model";
 import Teacher from "../models/teacher.model";
 import User from "../models/user.model";
 import Class from "../models/class.model";
+import Grade from "../models/grade.model";
 import Organization from "../models/oraganization.model";
 import { Op, fn, col, literal } from "sequelize";
 import { Sequelize, QueryTypes, where } from "sequelize";
@@ -904,11 +905,25 @@ const appearClassGrade =  async (req: Request, res: Response) => {
 
     const classGrades = await Class.findAll({
       where: { organizationId: teacher?.organizationId || student?.organizationId },
-      attributes: ["grade"],
-      group: ["grade"],
+      attributes: ["gradeId", "grade"],
+      group: ["gradeId", "grade"],
+      include: [
+        {
+          model: Grade,
+          as: "GradeEntity",
+          attributes: ["id", "name"],
+          required: false,
+        }
+      ]
     });
 
-    const grades = classGrades.map((cls) => cls.grade);
+    const grades = classGrades.map((cls) => {
+      if (cls.GradeEntity) {
+        return { id: cls.GradeEntity.id, name: cls.GradeEntity.name };
+      }
+      return { id: cls.gradeId || null, name: cls.grade };
+    });
+
     return res.status(200).json({ grades });
   } catch (error) {
     logger.error("Error in appearClassGrade (teacher):", { error });
@@ -919,14 +934,14 @@ const appearClassGrade =  async (req: Request, res: Response) => {
 const getClassesByGrade = async (req: Request, res: Response) => {
   try {
     const user = (req as Request & { user?: JwtPayload }).user;
-    const { grade } = req.query;
+    const { grade, gradeId } = req.query;
 
     if (!user) {
       return res.status(404).json({ message: "User data not found in request" });
     }
 
-    if (!grade || typeof grade !== "string") {
-      return res.status(400).json({ message: "Missing or invalid 'grade' in URL parameters" });
+    if ((!grade || typeof grade !== "string") && (!gradeId || typeof gradeId !== "string")) {
+      return res.status(400).json({ message: "Missing or invalid 'grade' or 'gradeId' in URL parameters" });
     }
 
     const teacher = await Teacher.findOne({ where: { userId: user.id } });
@@ -942,7 +957,7 @@ const getClassesByGrade = async (req: Request, res: Response) => {
     const classes = await Class.findAll({
       where: {
         organizationId,
-        grade,
+        ...(gradeId ? { gradeId } : { grade }),
       },
       attributes: ["id", "classname"],
     });

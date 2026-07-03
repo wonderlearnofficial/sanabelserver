@@ -14,6 +14,7 @@ import Challenge from "../models/challenge.model";
 import Reward from "../models/reward.model";
 import Task from "../models/task.model";
 import Class from "../models/class.model";
+import Grade from "../models/grade.model";
 import StudentTask from "../models/student-task.model";
 import StudentChallenge from "../models/student-challenge.model";
 import Groupe from "../models/groupe.model";
@@ -79,6 +80,7 @@ const rundb = async () => {
     TaskCategory,
     Task,
     Class,
+    Grade,
     StudentTask,
     StudentChallenge,
     Groupe,
@@ -108,6 +110,71 @@ const rundb = async () => {
 
 };
 
+const seedGradesAndMigrate = async () => {
+  try {
+    logger.info("🔍 Seeding and migrating grades...");
+    await Grade.sync();
+    try {
+      await Class.sync({ alter: true });
+    } catch (e) {
+      logger.warn("Class table sync alter failed, retrying standard sync:", e);
+      await Class.sync();
+    }
+    try {
+      await Student.sync({ alter: true });
+    } catch (e) {
+      logger.warn("Student table sync alter failed, retrying standard sync:", e);
+      await Student.sync();
+    }
+    const defaultGrades = ["primary", "preparatory", "secondary"];
+    
+    for (const name of defaultGrades) {
+      await Grade.findOrCreate({
+        where: { name },
+        defaults: { name }
+      });
+    }
+
+    const grades = await Grade.findAll();
+    const gradeMap = new Map<string, number>();
+    grades.forEach(g => {
+      gradeMap.set(g.name.toLowerCase(), g.id);
+    });
+
+    const studentsToMigrate = await Student.findAll({
+      where: { gradeId: null }
+    });
+    for (const student of studentsToMigrate) {
+      const oldGrade = student.grade;
+      if (oldGrade) {
+        const matchingId = gradeMap.get(oldGrade.toLowerCase());
+        if (matchingId) {
+          student.gradeId = matchingId;
+          await student.save();
+        }
+      }
+    }
+
+    const classesToMigrate = await Class.findAll({
+      where: { gradeId: null }
+    });
+    for (const cls of classesToMigrate) {
+      const oldGrade = cls.grade;
+      if (oldGrade) {
+        const matchingId = gradeMap.get(oldGrade.toLowerCase());
+        if (matchingId) {
+          cls.gradeId = matchingId;
+          await cls.save();
+        }
+      }
+    }
+
+    logger.info("✅ Grades seeded and migrated successfully!");
+  } catch (error) {
+    logger.error("❌ Error seeding and migrating grades:", { error });
+  }
+};
+
 const connectToDb = async (): Promise<void> => {
   try {
     await sequelize.authenticate();
@@ -118,6 +185,7 @@ const connectToDb = async (): Promise<void> => {
 
     // Ensure a working admin login always exists in this environment
     await seedAdmin();
+    await seedGradesAndMigrate();
   } catch (error) {
     logger.error("❌ Database connection error:", { error });
   }

@@ -12,6 +12,7 @@ import Challenge from "../models/challenge.model";
 import Task from "../models/task.model";
 import TaskCategory from "../models/task-category.model";
 import Class from "../models/class.model";
+import Grade from "../models/grade.model";
 import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
 import Organization, { OrganizationType } from "../models/oraganization.model";
@@ -91,8 +92,16 @@ const getOrganization = async (req: Request, res: Response) => {
         {
           model: Class,
           as: "Classes",
-          attributes: ["id", "classname", "grade"],
+          attributes: ["id", "classname", "grade", "gradeId"],
           required: false,
+          include: [
+            {
+              model: Grade,
+              as: "GradeEntity",
+              attributes: ["id", "name"],
+              required: false,
+            },
+          ],
         },
       ],
     });
@@ -212,6 +221,7 @@ const listStudents = async (req: Request, res: Response) => {
       search,
       organizationId,
       classId,
+      gradeId,
       grade,
       page = "1",
       limit = "20",
@@ -220,7 +230,8 @@ const listStudents = async (req: Request, res: Response) => {
     const where: any = {};
     if (organizationId) where.organizationId = organizationId;
     if (classId) where.classId = classId;
-    if (grade) where.grade = grade;
+    if (gradeId) where.gradeId = gradeId;
+    else if (grade) where.grade = grade;
 
     const userWhere: any = {};
     if (search) {
@@ -252,7 +263,21 @@ const listStudents = async (req: Request, res: Response) => {
         {
           model: Class,
           as: "Class",
-          attributes: ["id", "classname", "grade"],
+          attributes: ["id", "classname", "grade", "gradeId"],
+          required: false,
+          include: [
+            {
+              model: Grade,
+              as: "GradeEntity",
+              attributes: ["id", "name"],
+              required: false,
+            }
+          ]
+        },
+        {
+          model: Grade,
+          as: "GradeEntity",
+          attributes: ["id", "name"],
           required: false,
         },
         {
@@ -294,7 +319,21 @@ const getStudentDetail = async (req: Request, res: Response) => {
         {
           model: Class,
           as: "Class",
-          attributes: ["id", "classname", "grade"],
+          attributes: ["id", "classname", "grade", "gradeId"],
+          required: false,
+          include: [
+            {
+              model: Grade,
+              as: "GradeEntity",
+              attributes: ["id", "name"],
+              required: false,
+            }
+          ]
+        },
+        {
+          model: Grade,
+          as: "GradeEntity",
+          attributes: ["id", "name"],
           required: false,
         },
         {
@@ -368,7 +407,7 @@ const updateStudent = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid student id" });
     }
 
-    const { firstName, lastName, email, grade, organizationId, classId, profileImg } = req.body;
+    const { firstName, lastName, email, gradeId, grade, organizationId, classId, profileImg } = req.body;
 
     const student = await Student.findByPk(studentId);
     if (!student) {
@@ -416,7 +455,21 @@ const updateStudent = async (req: Request, res: Response) => {
     if (profileImg && typeof profileImg === "object") userUpdateData.profileImg = profileImg;
 
     const studentUpdateData: Record<string, any> = {};
-    if (grade !== undefined) studentUpdateData.grade = grade === "" ? null : grade;
+    if (gradeId !== undefined) {
+      if (gradeId === "" || gradeId === null) {
+        studentUpdateData.gradeId = null;
+        studentUpdateData.grade = null;
+      } else {
+        const gradeRecord = await Grade.findByPk(Number(gradeId));
+        if (!gradeRecord) {
+          return res.status(400).json({ message: "Target grade does not exist" });
+        }
+        studentUpdateData.gradeId = gradeRecord.id;
+        studentUpdateData.grade = gradeRecord.name;
+      }
+    } else if (grade !== undefined) {
+      studentUpdateData.grade = grade === "" ? null : grade;
+    }
     if (organizationId !== undefined) {
       studentUpdateData.organizationId = resultingOrganizationId;
       // If organization is cleared, also clear classId
@@ -610,6 +663,7 @@ const createUser = async (req: Request, res: Response) => {
       role,
       organizationId,
       classId,
+      gradeId,
       grade,
     } = req.body;
 
@@ -665,12 +719,25 @@ const createUser = async (req: Request, res: Response) => {
     });
 
     if (role === "Student") {
+      let resolvedGradeId: number | undefined;
+      let resolvedGradeName: string | undefined = grade;
+
+      if (gradeId !== undefined && gradeId !== "" && gradeId !== null) {
+        const gradeRecord = await Grade.findByPk(Number(gradeId));
+        if (!gradeRecord) {
+          return res.status(400).json({ message: "Target grade does not exist" });
+        }
+        resolvedGradeId = gradeRecord.id;
+        resolvedGradeName = gradeRecord.name;
+      }
+
       const connectCode = await generateUniqueConnectCode();
       const student = await Student.create({
         userId: userRecord.id,
         organizationId: resolvedOrganizationId,
         classId: resolvedClassId,
-        grade: grade || "",
+        gradeId: resolvedGradeId,
+        grade: resolvedGradeName || "",
         treeProgress: 1,
         connectCode,
       });
@@ -717,7 +784,7 @@ const updateUser = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid user id" });
     }
 
-    const { firstName, lastName, email, organizationId, classId, grade } = req.body;
+    const { firstName, lastName, email, organizationId, classId, gradeId, grade } = req.body;
 
     const userRecord = await User.findByPk(userId);
     if (!userRecord) {
@@ -758,7 +825,22 @@ const updateUser = async (req: Request, res: Response) => {
       }
 
       const studentUpdateData: Record<string, any> = {};
-      if (grade !== undefined) studentUpdateData.grade = grade === "" ? null : grade;
+      if (gradeId !== undefined) {
+        if (gradeId === "" || gradeId === null) {
+          studentUpdateData.gradeId = null;
+          studentUpdateData.grade = null;
+        } else {
+          const gradeRecord = await Grade.findByPk(Number(gradeId));
+          if (!gradeRecord) {
+            return res.status(400).json({ message: "Target grade does not exist" });
+          }
+          studentUpdateData.gradeId = gradeRecord.id;
+          studentUpdateData.grade = gradeRecord.name;
+        }
+      } else if (grade !== undefined) {
+        studentUpdateData.grade = grade === "" ? null : grade;
+      }
+
       if (organizationId !== undefined) {
         studentUpdateData.organizationId = resultingOrganizationId;
         // If organization is cleared, also clear classId
@@ -865,6 +947,7 @@ const listClasses = async (req: Request, res: Response) => {
         { model: Organization, as: "Organization", attributes: ["id", "name"], required: false },
         { model: Teacher, as: "Teachers", attributes: ["id", "userId"], required: false },
         { model: Student, as: "Students", attributes: ["id"], required: false },
+        { model: Grade, as: "GradeEntity", attributes: ["id", "name"], required: false },
       ],
     });
 
@@ -877,10 +960,10 @@ const listClasses = async (req: Request, res: Response) => {
 
 const createClass = async (req: Request, res: Response) => {
   try {
-    const { classname, grade, organizationId, classdescrption } = req.body;
+    const { classname, gradeId, grade, organizationId, classdescrption } = req.body;
 
-    if (!classname || !grade || !organizationId) {
-      return res.status(400).json({ message: "classname, grade and organizationId are required" });
+    if (!classname || (!gradeId && !grade) || !organizationId) {
+      return res.status(400).json({ message: "classname, gradeId and organizationId are required" });
     }
 
     const organization = await Organization.findByPk(Number(organizationId));
@@ -888,9 +971,22 @@ const createClass = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Target organization does not exist" });
     }
 
+    let resolvedGradeId: number | undefined;
+    let resolvedGradeName: string | undefined = grade;
+
+    if (gradeId) {
+      const gradeRecord = await Grade.findByPk(Number(gradeId));
+      if (!gradeRecord) {
+        return res.status(400).json({ message: "Target grade does not exist" });
+      }
+      resolvedGradeId = gradeRecord.id;
+      resolvedGradeName = gradeRecord.name;
+    }
+
     const newClass = await Class.create({
       classname,
-      grade,
+      gradeId: resolvedGradeId,
+      grade: resolvedGradeName || "",
       organizationId: organization.id,
       classdescrption,
     });
@@ -914,7 +1010,7 @@ const updateClass = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Class not found" });
     }
 
-    const { classname, grade, organizationId, classdescrption } = req.body;
+    const { classname, gradeId, grade, organizationId, classdescrption } = req.body;
 
     if (organizationId !== undefined) {
       const organization = await Organization.findByPk(Number(organizationId));
@@ -925,7 +1021,21 @@ const updateClass = async (req: Request, res: Response) => {
 
     const updateData: Record<string, any> = {};
     if (classname) updateData.classname = classname;
-    if (grade) updateData.grade = grade;
+    if (gradeId !== undefined) {
+      if (gradeId === null || gradeId === "") {
+        updateData.gradeId = null;
+        updateData.grade = null;
+      } else {
+        const gradeRecord = await Grade.findByPk(Number(gradeId));
+        if (!gradeRecord) {
+          return res.status(400).json({ message: "Target grade does not exist" });
+        }
+        updateData.gradeId = gradeRecord.id;
+        updateData.grade = gradeRecord.name;
+      }
+    } else if (grade) {
+      updateData.grade = grade;
+    }
     if (organizationId !== undefined) updateData.organizationId = Number(organizationId);
     if (classdescrption !== undefined) updateData.classdescrption = classdescrption;
 
@@ -994,6 +1104,118 @@ const resetUserPassword = async (req: Request, res: Response) => {
   }
 };
 
+const listGrades = async (req: Request, res: Response) => {
+  try {
+    const { search, page = "1", limit = "20" } = req.query;
+
+    const where: any = {};
+    if (search) where.name = { [Op.like]: `%${String(search)}%` };
+
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 20;
+    const offset = (pageNum - 1) * limitNum;
+
+    const { rows, count } = await Grade.findAndCountAll({
+      where,
+      limit: limitNum,
+      offset,
+      order: [["name", "ASC"]],
+    });
+
+    return res.status(200).json({
+      data: rows,
+      total: count,
+      page: pageNum,
+      limit: limitNum,
+    });
+  } catch (error) {
+    logger.error("Error in listGrades:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const createGrade = async (req: Request, res: Response) => {
+  try {
+    const { name } = req.body;
+
+    if (!name || typeof name !== "string") {
+      return res.status(400).json({ message: "name is required" });
+    }
+
+    const normalizedName = name.trim().toLowerCase();
+
+    const existing = await Grade.findOne({ where: { name: normalizedName } });
+    if (existing) {
+      return res.status(409).json({ message: "Grade already exists" });
+    }
+
+    const grade = await Grade.create({ name: normalizedName });
+    return res.status(201).json({ data: grade });
+  } catch (error) {
+    logger.error("Error in createGrade:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const updateGrade = async (req: Request, res: Response) => {
+  try {
+    const gradeId = Number(req.params.gradeId);
+    if (!gradeId) {
+      return res.status(400).json({ message: "Invalid grade id" });
+    }
+
+    const { name } = req.body;
+
+    const grade = await Grade.findByPk(gradeId);
+    if (!grade) {
+      return res.status(404).json({ message: "Grade not found" });
+    }
+
+    if (name) {
+      const normalizedName = name.trim().toLowerCase();
+      const existing = await Grade.findOne({ where: { name: normalizedName } });
+      if (existing && existing.id !== gradeId) {
+        return res.status(409).json({ message: "Grade name already exists" });
+      }
+      await grade.update({ name: normalizedName });
+    }
+
+    return res.status(200).json({ data: grade });
+  } catch (error) {
+    logger.error("Error in updateGrade:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const deleteGrade = async (req: Request, res: Response) => {
+  try {
+    const gradeId = Number(req.params.gradeId);
+    if (!gradeId) {
+      return res.status(400).json({ message: "Invalid grade id" });
+    }
+
+    const grade = await Grade.findByPk(gradeId);
+    if (!grade) {
+      return res.status(404).json({ message: "Grade not found" });
+    }
+
+    const studentCount = await Student.count({ where: { gradeId } });
+    const classCount = await Class.count({ where: { gradeId } });
+
+    if (studentCount > 0 || classCount > 0) {
+      return res.status(400).json({
+        message: "Grade has students or classes assigned, reassign or remove them first",
+      });
+    }
+
+    await grade.destroy();
+    return res.status(200).json({ message: "Grade deleted successfully" });
+  } catch (error) {
+    logger.error("Error in deleteGrade:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 export {
   getAdminProfile,
   listOrganizations,
@@ -1016,4 +1238,8 @@ export {
   updateClass,
   deleteClass,
   resetUserPassword,
+  listGrades,
+  createGrade,
+  updateGrade,
+  deleteGrade,
 };

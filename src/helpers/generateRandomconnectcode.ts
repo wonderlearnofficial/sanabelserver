@@ -5,7 +5,7 @@ async function generateUniqueConnectCode(): Promise<string> {
     let isUnique = false;
   
     while (!isUnique) {
-      connectCode = Math.random().toString(36).slice(-10).toUpperCase(); // Generate 10-character code
+      connectCode = Math.floor(10000 + Math.random() * 90000).toString(); // Generate 5-digit code
   
       // Check if the code already exists
       const existingStudent = await Student.findOne({ where: { connectCode } });
