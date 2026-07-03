@@ -5,6 +5,7 @@ import User from "../models/user.model";
 import Task from "../models/task.model";
 import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
+import Class from "../models/class.model";
 import MissionApprovalRequest, {
   ApprovalStatus,
   ApproverType,
@@ -174,7 +175,10 @@ const listPendingRequestsForParent = async (req: Request, res: Response) => {
         {
           model: Student,
           as: "Student",
-          include: [{ model: User, as: "User", attributes: ["firstName", "lastName"] }],
+          include: [
+            { model: User, as: "User", attributes: ["firstName", "lastName", "profileImg"] },
+            { model: Class, as: "Class", attributes: ["id", "classname", "grade"], required: false },
+          ],
         },
         { model: Task, as: "Mission" },
       ],
@@ -254,7 +258,10 @@ const listPendingRequestsForTeacher = async (req: Request, res: Response) => {
         {
           model: Student,
           as: "Student",
-          include: [{ model: User, as: "User", attributes: ["firstName", "lastName"] }],
+          include: [
+            { model: User, as: "User", attributes: ["firstName", "lastName", "profileImg"] },
+            { model: Class, as: "Class", attributes: ["id", "classname", "grade"], required: false },
+          ],
         },
         { model: Task, as: "Mission" },
       ],
