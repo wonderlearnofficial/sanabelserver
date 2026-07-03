@@ -25,7 +25,7 @@ import {
 } from "../controllers/studentController";
 
 import { authenticateToken } from "../middleware/auth";
-import { checkstudent } from "../middleware/checkrole";
+import { checkstudent, checkAdmin } from "../middleware/checkrole";
 import multer from "multer";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
 import { appearClassGrade, getClassesByGrade } from "../controllers/teacherController";
@@ -989,6 +989,8 @@ router.patch("/grow-tree", authenticateToken, checkstudent, growTheTree);
 
 router.post(
   "/add-student",
+  authenticateToken,
+  checkAdmin,
   upload.single("file"),
   processStudentMiddleware,
   addStudent

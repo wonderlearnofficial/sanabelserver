@@ -24,6 +24,7 @@ import path from "path";
 import fs from "fs";
 import { sendEmail } from "../helpers/sendEmail";
 import { generatePassword } from "../helpers/generatePassword";
+import { getImportField, DEFAULT_IMPORT_PASSWORD } from "../helpers/importFieldLookup";
 
 declare global {
   namespace Express {
@@ -779,22 +780,24 @@ const addTeacher = async (req: Request, res: Response) => {
 
       for (const data of all_data) {
         try {
-          const firstName = data.FirstName?.toString().trim();
-          const lastName = data.LastName?.toString().trim();
-          const email = data.Email?.toString().trim();
-          const gender = data.Gender?.toString().trim();
-          const orgName = data.OrganizationName?.toString().trim();
-          const dateOfBirth = data.DateOfBirth || null;
+          const firstName = getImportField(data, "FirstName", "firstName", "first_name")?.toString().trim();
+          const lastName = getImportField(data, "LastName", "lastName", "last_name")?.toString().trim();
+          const email = getImportField(data, "Email", "email")?.toString().trim();
+          const gender = getImportField(data, "Gender", "gender")?.toString().trim();
+          const orgInput = getImportField(data, "OrganizationName", "organizationName", "school", "School");
+          const dateOfBirth = getImportField(data, "DateOfBirth", "dateOfBirth") || null;
 
-          if (!firstName || !lastName || !email || !orgName) {
+          if (!firstName || !lastName || !email || !orgInput) {
             failedEntries.push({ row: data, error: "Missing required fields" });
             continue;
           }
 
-          const organization = await Organization.findOne({ where: { name: orgName } });
+          // Find or auto-create Organization (normalized the same way the
+          // standalone org/class Excel importers already store names).
+          const orgName = String(orgInput).trim().toLowerCase();
+          let organization = await Organization.findOne({ where: { name: orgName } });
           if (!organization) {
-            failedEntries.push({ row: data, error: "Organization not found" });
-            continue;
+            organization = await Organization.create({ name: orgName });
           }
 
           if (!organizationFiles[organization.name]) {
@@ -814,7 +817,7 @@ const addTeacher = async (req: Request, res: Response) => {
             continue;
           }
 
-          const password = generatePassword();
+          const password = DEFAULT_IMPORT_PASSWORD;
           const hashedPassword = bcrypt.hashSync(password, 10);
 
           const user = await User.create({
@@ -828,7 +831,7 @@ const addTeacher = async (req: Request, res: Response) => {
             isAccess: true,
           });
 
-          await Teacher.create({
+          const new_teacher = await Teacher.create({
             userId: user.id,
             organizationId: organization.id,
           });
@@ -841,13 +844,20 @@ const addTeacher = async (req: Request, res: Response) => {
             );
           }
 
-          await sendEmail({
-            to: email,
-            subject: "Your Teacher Account in Snabel elahssan",
-            text: `Hello ${firstName},\n\nYour teacher account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nPlease log in and change your password immediately.`,
-          });
+          // Best-effort email — a delivery failure shouldn't undo (or mark
+          // failed) an account that was already created, since the password
+          // is a known default rather than something only the email reveals.
+          try {
+            await sendEmail({
+              to: email,
+              subject: "Your Teacher Account in Snabel elahssan",
+              text: `Hello ${firstName},\n\nYour teacher account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nPlease log in and change your password immediately.`,
+            });
+          } catch (emailError) {
+            logger.error("Failed to send onboarding email (non-blocking):", { emailError, email });
+          }
 
-          successfulEntries.push({ row: data, message: "Teacher added successfully" });
+          successfulEntries.push({ row: data, message: "Teacher added successfully", teacherId: new_teacher.id });
         } catch (error) {
           failedEntries.push({
             row: data,

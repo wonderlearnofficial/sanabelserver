@@ -24,6 +24,7 @@ import TaskCategory from "../models/task-category.model";
 import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
+import { getImportField, DEFAULT_IMPORT_PASSWORD } from "../helpers/importFieldLookup";
 
 declare global {
   namespace Express {
@@ -1230,16 +1231,30 @@ const addStudent = async (req: Request, res: Response) => {
       const all_data = processedData[sheet];
       for (const data of all_data) {
         try {
-          // ✅ Find Organization
-          const organization = await Organization.findOne({
-            where: { name: data.OrganizationName },
-          });
-          if (!organization) {
-            failedEntries.push({
-              row: data,
-              error: "School not found in request",
-            });
+          const firstName = getImportField(data, "FirstName", "firstName", "first_name");
+          const lastName = getImportField(data, "LastName", "lastName", "last_name");
+          const email = getImportField(data, "Email", "email");
+          const gradeInput = getImportField(data, "Grade", "grade");
+          const orgInput = getImportField(data, "OrganizationName", "organizationName", "school", "School");
+          const classInput = getImportField(data, "ClassName", "className", "class", "Class");
+          const dateOfBirth = getImportField(data, "DateOfBirth", "dateOfBirth");
+          const gender = getImportField(data, "Gender", "gender");
+
+          if (!firstName || !lastName || !email) {
+            failedEntries.push({ row: data, error: "Missing firstName, lastName, or email" });
             continue;
+          }
+
+          // ✅ Find or auto-create Organization (normalized the same way
+          // the standalone org/class Excel importers already store names)
+          const orgName = String(orgInput || "").trim().toLowerCase();
+          if (!orgName) {
+            failedEntries.push({ row: data, error: "Missing school/organization name" });
+            continue;
+          }
+          let organization = await Organization.findOne({ where: { name: orgName } });
+          if (!organization) {
+            organization = await Organization.create({ name: orgName });
           }
 
           // ✅ Manage Excel Files for Organizations
@@ -1255,45 +1270,50 @@ const addStudent = async (req: Request, res: Response) => {
 
           const { worksheet } = organizationFiles[organization.name];
 
-          // ✅ Find Class
-          const gradeName = String(data.Grade || "").trim().toLowerCase();
-          const gradeRecord = await Grade.findOne({ where: { name: gradeName } });
+          // ✅ Find or auto-create Grade
+          const gradeName = String(gradeInput || "").trim().toLowerCase();
+          let gradeRecord = gradeName ? await Grade.findOne({ where: { name: gradeName } }) : null;
+          if (!gradeRecord && gradeName) {
+            gradeRecord = await Grade.create({ name: gradeName });
+          }
 
-          const class_data = await Class.findOne({
-            where: {
-              organizationId: organization.id,
-              classname: data.ClassName,
-              ...(gradeRecord ? { gradeId: gradeRecord.id } : { grade: data.Grade }),
-            },
+          // ✅ Find or auto-create Class
+          const className = String(classInput || "").trim();
+          if (!className) {
+            failedEntries.push({ row: data, error: "Missing class name" });
+            continue;
+          }
+          let class_data = await Class.findOne({
+            where: { organizationId: organization.id, classname: className },
           });
           if (!class_data) {
-            failedEntries.push({
-              row: data,
-              error: "Class not found in request",
+            class_data = await Class.create({
+              classname: className,
+              organizationId: organization.id,
+              gradeId: gradeRecord ? gradeRecord.id : null,
+              grade: gradeRecord ? gradeRecord.name : gradeName || null,
             });
-            continue;
           }
 
           // ✅ Check if Email Already Exists
-          const email = data.Email;
-          if (await User.findOne({ where: { email: email } })) {
+          if (await User.findOne({ where: { email } })) {
             failedEntries.push({ row: data, error: "Email is already in use" });
             continue;
           }
 
           // ✅ Create User & Student
-          const password = generatePassword();
+          const password = DEFAULT_IMPORT_PASSWORD;
           const hashedPassword = bcrypt.hashSync(password, 10);
           worksheet.addRow({ email, password });
 
           const new_user = await User.create({
-            firstName: data.FirstName,
-            lastName: data.LastName,
+            firstName,
+            lastName,
             email,
             role: "Student",
             password: hashedPassword,
-            dateOfBirth: data.DateOfBirth,
-            gender: data.Gender,
+            dateOfBirth: dateOfBirth || null,
+            gender: gender || null,
             isAccess: true,
           });
           const connectCode = await generateUniqueConnectCode();
@@ -1301,18 +1321,25 @@ const addStudent = async (req: Request, res: Response) => {
             connectCode,
             treeProgress: 1,
             gradeId: gradeRecord ? gradeRecord.id : null,
-            grade: data.Grade,
+            grade: gradeRecord ? gradeRecord.name : gradeName || null,
             userId: new_user.id,
             organizationId: organization.id,
             classId: class_data.id,
           });
 
-          // ✅ Send Email with Credentials
-          await sendEmail({
-            to: email,
-            subject: "Your account in Snabel elahssan",
-            text: `Your email code is ${email}, and your password is ${password}`,
-          });
+          // ✅ Best-effort email — a delivery failure shouldn't undo (or
+          // mark failed) an account that was already created, since the
+          // password is a known default rather than something only the
+          // email reveals.
+          try {
+            await sendEmail({
+              to: email,
+              subject: "Your account in Snabel elahssan",
+              text: `Your email is ${email}, and your password is ${password}`,
+            });
+          } catch (emailError) {
+            logger.error("Failed to send onboarding email (non-blocking):", { emailError, email });
+          }
 
           // ✅ Assign Tasks & Challenges After Email
           const allChallenges = await Challenge.findAll();
@@ -1329,9 +1356,14 @@ const addStudent = async (req: Request, res: Response) => {
           successfulEntries.push({
             row: data,
             message: "Student added successfully",
+            studentId: new_student.id,
+            connectCode,
           });
         } catch (error) {
-          failedEntries.push({ row: data, error: error });
+          failedEntries.push({
+            row: data,
+            error: error instanceof Error ? error.message : String(error),
+          });
         }
       }
     }

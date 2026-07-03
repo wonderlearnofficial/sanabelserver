@@ -2,7 +2,7 @@ import { Response, Request,NextFunction } from "express";
 import { authenticateToken } from "../middleware/auth";
 import multer from "multer";
 
-import { checkTeacher } from "../middleware/checkrole";
+import { checkTeacher, checkAdmin } from "../middleware/checkrole";
 import {
   appearclass,
   appearStudent,
@@ -1069,8 +1069,9 @@ router.delete("/delete-teacher", authenticateToken, checkTeacher, deleteData);
  */
 router.post(
   "/add-teacher",
+  authenticateToken,
+  checkAdmin,
   upload.single("file"),
- 
   processTeacherMiddleware,
   addTeacher
 );

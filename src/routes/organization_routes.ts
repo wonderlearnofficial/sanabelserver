@@ -1,6 +1,8 @@
 import multer from "multer";
 import { schoolAndClassProcessMiddleware } from "../middleware/processExcelfile";
 import { createOrganizationByExcel } from "../controllers/organiztionController";
+import { authenticateToken } from "../middleware/auth";
+import { checkAdmin } from "../middleware/checkrole";
 
 export const router = require("express").Router();
 const upload = multer({ dest: "uploads/" });
@@ -48,6 +50,8 @@ const upload = multer({ dest: "uploads/" });
 
 router.post(
   "/create",
+  authenticateToken,
+  checkAdmin,
   upload.single("file"),
   schoolAndClassProcessMiddleware,
   createOrganizationByExcel
