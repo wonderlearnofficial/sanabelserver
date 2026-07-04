@@ -1,6 +1,7 @@
 import { Sequelize, DataTypes, CreationOptional, Model } from "@sequelize/core";
 import User from "./user.model";
 import Organization from "./oraganization.model";
+
 class Teacher extends Model {
   declare id: CreationOptional<number>;
   declare subject: CreationOptional<string>;
@@ -12,8 +13,6 @@ class Teacher extends Model {
     Teacher.belongsTo(models.Organization, { foreignKey: "organizationId", as: "Organization" });
   
     Teacher.hasMany(models.Class, { foreignKey: "teacherId", as: "Classes" });
-  
- 
   }
   
   static initModel(sequelize: Sequelize) {

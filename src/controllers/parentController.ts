@@ -17,6 +17,10 @@ import Class from "../models/class.model"
 import Grade from "../models/grade.model";
 import Organization from "../models/oraganization.model";
 import StudentChallenge, { CompletionStatus } from "../models/student-challenge.model";
+import bcrypt from "bcryptjs";
+import { sendEmail } from "../helpers/sendEmail";
+import { buildAccountCreatedEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
+import { getImportField, DEFAULT_IMPORT_PASSWORD } from "../helpers/importFieldLookup";
 
 const parentData = async (req: Request, res: Response) => {
   const user = (req as Request & { user: JwtPayload | undefined }).user;
@@ -608,4 +612,91 @@ const addPros = async (req: Request, res: Response) => {
 
     
     
-export { parentData, updateDataTeacherParent, deleteData, searchStuentByCode, connectStudentToParent, appearStudentbyparent, addPros,parentLeaderboard,appearStudentInDetails };
+// Bulk-import parents from an Excel/CSV file — mirrors addStudent/addTeacher
+// (studentController.ts / teacherController.ts): flexible header aliases,
+// skip-and-continue on duplicate emails, fixed onboarding password.
+const addParent = async (req: Request, res: Response) => {
+  const processedData: any = req.processedData;
+  const successfulEntries: any[] = [];
+  const failedEntries: any[] = [];
+
+  try {
+    for (const sheet in processedData) {
+      const all_data = processedData[sheet];
+      for (const data of all_data) {
+        try {
+          const firstName = getImportField(data, "FirstName", "firstName", "first_name");
+          const lastName = getImportField(data, "LastName", "lastName", "last_name");
+          const email = getImportField(data, "Email", "email");
+          const dateOfBirth = getImportField(data, "DateOfBirth", "dateOfBirth");
+          const gender = getImportField(data, "Gender", "gender");
+
+          if (!firstName || !lastName || !email) {
+            failedEntries.push({ row: data, error: "Missing firstName, lastName, or email" });
+            continue;
+          }
+
+          if (await User.findOne({ where: { email } })) {
+            failedEntries.push({ row: data, error: "Email is already in use" });
+            continue;
+          }
+
+          const password = DEFAULT_IMPORT_PASSWORD;
+          const hashedPassword = bcrypt.hashSync(password, 10);
+
+          const user = await User.create({
+            firstName,
+            lastName,
+            email,
+            role: "Parent",
+            password: hashedPassword,
+            dateOfBirth: dateOfBirth || null,
+            gender: gender || null,
+            isAccess: true,
+          });
+
+          const new_parent = await Parent.create({ userId: user.id });
+
+          let emailSent = false;
+          try {
+            await sendEmail({
+              to: email,
+              subject: "Your account in Snabel elahssan",
+              text: `Your email is ${email}, and your password is ${password}`,
+              html: buildAccountCreatedEmail({ firstName, email, password, roleLabel: "parent" }),
+              attachments: LOGO_ATTACHMENTS,
+            });
+            emailSent = true;
+          } catch (emailError) {
+            logger.error("Failed to send onboarding email (non-blocking):", { emailError, email });
+          }
+
+          successfulEntries.push({
+            row: data,
+            message: "Parent added successfully",
+            parentId: new_parent.id,
+            emailSent,
+          });
+        } catch (error) {
+          failedEntries.push({
+            row: data,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
+    res.json({
+      message: "Parent import completed",
+      successCount: successfulEntries.length,
+      failureCount: failedEntries.length,
+      successfulEntries,
+      failedEntries,
+    });
+  } catch (error) {
+    logger.error("Error processing Excel file (parent import):", { error });
+    res.status(500).json({ message: "Internal server error", error });
+  }
+};
+
+export { parentData, updateDataTeacherParent, deleteData, searchStuentByCode, connectStudentToParent, appearStudentbyparent, addPros,parentLeaderboard,appearStudentInDetails, addParent };

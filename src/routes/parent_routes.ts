@@ -8,9 +8,10 @@ import {
   addPros,
   parentLeaderboard,
   appearStudentInDetails,
+  addParent,
 } from "../controllers/parentController";
 import { authenticateToken } from "../middleware/auth";
-import { checkparent } from "../middleware/checkrole";
+import { checkparent, checkAdmin } from "../middleware/checkrole";
 import {
   appearTaskesCategory,
   appearTaskesType,
@@ -21,6 +22,10 @@ import {
   approveRequestAsParent,
   denyRequestAsParent,
 } from "../controllers/missionController";
+import multer from "multer";
+import { processStudentMiddleware } from "../middleware/processExcelfile";
+
+const upload = multer({ dest: "uploads/" });
 
 export const router = require("express").Router();
 
@@ -524,3 +529,38 @@ router.post("/approveRequest", authenticateToken, checkparent, approveRequestAsP
  */
 router.post("/denyRequest", authenticateToken, checkparent, denyRequestAsParent);
 router.get("/appear-student-deatiled/:studentId", authenticateToken, checkparent, appearStudentInDetails);
+
+/**
+ * @swagger
+ * /parents/add-parent:
+ *   post:
+ *     summary: Bulk-import parent accounts from an Excel/CSV file (admin only)
+ *     description: |
+ *       Columns (case-insensitive aliases accepted): firstName, lastName, email,
+ *       optional dateOfBirth/gender. Every created account's password is a fixed
+ *       default; duplicate emails are skipped and processing continues.
+ *     tags: [Parents]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Import summary with successfulEntries/failedEntries
+ */
+router.post(
+  "/add-parent",
+  authenticateToken,
+  checkAdmin,
+  upload.single("file"),
+  processStudentMiddleware,
+  addParent
+);

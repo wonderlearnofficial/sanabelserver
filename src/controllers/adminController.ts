@@ -19,6 +19,7 @@ import Organization, { OrganizationType } from "../models/oraganization.model";
 import { QueryTypes } from "sequelize";
 import { generatePassword } from "../helpers/generatePassword";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
+import { getImportField } from "../helpers/importFieldLookup";
 
 const DEFAULT_RESET_PASSWORD = "changeme123";
 
@@ -598,6 +599,20 @@ const listTeachers = async (req: Request, res: Response) => {
           attributes: ["id", "name"],
           required: false,
         },
+        {
+          model: Class,
+          as: "Classes",
+          attributes: ["id", "classname", "gradeId", "grade"],
+          required: false,
+          include: [
+            {
+              model: Grade,
+              as: "GradeEntity",
+              attributes: ["id", "name"],
+              required: false,
+            }
+          ]
+        },
       ],
     });
 
@@ -751,10 +766,20 @@ const createUser = async (req: Request, res: Response) => {
         }))
       );
     } else if (role === "Teacher") {
-      await Teacher.create({
+      const teacher = await Teacher.create({
         userId: userRecord.id,
         organizationId: resolvedOrganizationId,
       });
+
+      // Assign classes to the teacher
+      if (req.body.classIds && Array.isArray(req.body.classIds)) {
+        for (const classId of req.body.classIds) {
+          const targetClass = await Class.findByPk(Number(classId));
+          if (targetClass && targetClass.organizationId === resolvedOrganizationId) {
+            await targetClass.update({ teacherId: teacher.id });
+          }
+        }
+      }
     } else if (role === "Parent") {
       await Parent.create({ userId: userRecord.id });
     }
@@ -853,19 +878,41 @@ const updateUser = async (req: Request, res: Response) => {
       if (Object.keys(studentUpdateData).length > 0) {
         await student.update(studentUpdateData);
       }
-    } else if (userRecord.role === "Teacher" && organizationId !== undefined) {
+    } else if (userRecord.role === "Teacher") {
       const teacher = await Teacher.findOne({ where: { userId } });
       if (!teacher) {
         return res.status(404).json({ message: "Teacher record not found for this user" });
       }
-      if (organizationId === null || organizationId === "") {
-        await teacher.update({ organizationId: null });
-      } else {
-        const organization = await Organization.findByPk(Number(organizationId));
+
+      const resultingOrganizationId =
+        organizationId !== undefined
+          ? (organizationId === null || organizationId === "" ? null : Number(organizationId))
+          : teacher.organizationId;
+
+      if (organizationId !== undefined && resultingOrganizationId !== null) {
+        const organization = await Organization.findByPk(resultingOrganizationId);
         if (!organization) {
           return res.status(400).json({ message: "Target organization does not exist" });
         }
-        await teacher.update({ organizationId: organization.id });
+      }
+
+      if (organizationId !== undefined) {
+        await teacher.update({ organizationId: resultingOrganizationId });
+      }
+
+      // Update classes assigned to this teacher
+      if (req.body.classIds !== undefined && Array.isArray(req.body.classIds)) {
+        // First, clear teacherId for all classes currently assigned to this teacher
+        await Class.update({ teacherId: null }, { where: { teacherId: teacher.id } });
+
+        // Then assign the new classes
+        for (const classId of req.body.classIds) {
+          const targetClass = await Class.findByPk(Number(classId));
+          // Only assign if the class exists and belongs to the teacher's organization
+          if (targetClass && targetClass.organizationId === teacher.organizationId) {
+            await targetClass.update({ teacherId: teacher.id });
+          }
+        }
       }
     }
 
@@ -1157,6 +1204,58 @@ const createGrade = async (req: Request, res: Response) => {
   }
 };
 
+// Row-based bulk import (one row per grade name). Used by the admin Import
+// Wizard — create-if-missing, no-op (still reported success) if it exists.
+const importGrades = async (req: Request, res: Response) => {
+  const processedData: any = req.processedData;
+  const successfulEntries: any[] = [];
+  const failedEntries: any[] = [];
+
+  try {
+    for (const sheet in processedData) {
+      const all_data = processedData[sheet];
+      for (const data of all_data) {
+        try {
+          const nameInput = getImportField(data, "name", "Name");
+          const gradeName = String(nameInput || "").trim().toLowerCase();
+          if (!gradeName) {
+            failedEntries.push({ row: data, error: "Missing grade name" });
+            continue;
+          }
+
+          let grade = await Grade.findOne({ where: { name: gradeName } });
+          const alreadyExisted = !!grade;
+          if (!grade) {
+            grade = await Grade.create({ name: gradeName });
+          }
+
+          successfulEntries.push({
+            row: data,
+            message: alreadyExisted ? "Grade already existed" : "Grade created",
+            gradeId: grade.id,
+          });
+        } catch (error) {
+          failedEntries.push({
+            row: data,
+            error: error instanceof Error ? error.message : String(error),
+          });
+        }
+      }
+    }
+
+    res.json({
+      message: "Grade import completed",
+      successCount: successfulEntries.length,
+      failureCount: failedEntries.length,
+      successfulEntries,
+      failedEntries,
+    });
+  } catch (error) {
+    logger.error("Error processing Excel file (grade import):", { error });
+    res.status(500).json({ message: "Internal server error", error });
+  }
+};
+
 const updateGrade = async (req: Request, res: Response) => {
   try {
     const gradeId = Number(req.params.gradeId);
@@ -1242,4 +1341,5 @@ export {
   createGrade,
   updateGrade,
   deleteGrade,
+  importGrades,
 };

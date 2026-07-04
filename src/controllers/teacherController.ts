@@ -23,7 +23,7 @@ import bcrypt from "bcryptjs";
 import path from "path";
 import fs from "fs";
 import { sendEmail } from "../helpers/sendEmail";
-import { buildAccountCreatedEmail } from "../helpers/emailTemplates";
+import { buildAccountCreatedEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
 import { generatePassword } from "../helpers/generatePassword";
 import { getImportField, DEFAULT_IMPORT_PASSWORD } from "../helpers/importFieldLookup";
 
@@ -58,6 +58,12 @@ const appearStudent = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User or Teacher not found" });
     }
 
+    const myClasses = await Class.findAll({
+      where: { teacherId: teacher.id },
+      attributes: ["id"]
+    });
+    const myClassIds = myClasses.map((c) => c.id);
+
     const students = await Student.findAll({
       include: [
         {
@@ -82,11 +88,12 @@ const appearStudent = async (req: Request, res: Response) => {
           model: Organization,
           as: "organization",
           attributes: ["id", "name"],
-        
         },
-        
       ],
-      where:{organizationId:teacher.organizationId}
+      where: {
+        organizationId: teacher.organizationId,
+        classId: { [Op.in]: myClassIds }
+      }
     });
 
     res.status(200).json({ data: students });
@@ -114,46 +121,29 @@ const appearclass = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User or Teacher not found" });
     }
 
-    // Fetch all students including class and organization info
-    const students = await Student.findAll({
-      where: { classId: { [Op.ne]: null } },
+    const classes = await Class.findAll({
+      where: { teacherId: teacher.id, organizationId: teacher.organizationId },
       include: [
         {
-          model: Class,
-          as: "class",
-          attributes: ["id", "classname"],
+          model: Student,
+          as: "Students",
+          attributes: ["id"],
         },
         {
           model: Organization,
-          as: "organization",
+          as: "Organization",
           attributes: ["id", "name"],
         },
       ],
     });
 
-    // Manually group students by class and organization
-    const groupedData: Record<string, any> = {};
-
-    students.forEach((student) => {
-      if (student.class && student.organization) {
-        const key = `${student.class.id}-${student.organization.id}`;
-
-        if (!groupedData[key]) {
-          groupedData[key] = {
-            studentCount: 0,
-            classId: student.class.id,
-            className: student.class.classname,
-            organizationId: student.organization.id,
-            organizationName: student.organization.name,
-          };
-        }
-
-        groupedData[key].studentCount += 1;
-      }
-    });
-
-    // Convert grouped object into an array
-    const result = Object.values(groupedData);
+    const result = classes.map((cls: any) => ({
+      studentCount: cls.Students ? cls.Students.length : 0,
+      classId: cls.id,
+      className: cls.classname,
+      organizationId: cls.Organization?.id || null,
+      organizationName: cls.Organization?.name || null,
+    }));
 
     res.status(200).json({ data: result });
   } catch (error) {
@@ -180,15 +170,31 @@ const appearStudentByclass = async (req: Request, res: Response) => {
       if (!classId) {
         return res.status(400).json({ message: "Class ID is required" });
       }
+
+      // Check authorization
+      const classExists = await Class.findOne({
+        where: { id: classId, teacherId: teacher.id }
+      });
+      if (!classExists) {
+        return res.status(403).json({ message: "You are not authorized to view students of this class" });
+      }
+
       const students = await Student.findAll({
-        
-        where: { classId: classId, organizationId:teacher.organizationId
-      },
+        where: { classId: classId, organizationId:teacher.organizationId },
         include: [
           {
             model: Class,
             as: "class",
-            attributes: ["id", "classname"],
+            attributes: ["id", "classname", "grade", "gradeId"],
+            include: [
+              {
+                model: Grade,
+                as: "GradeEntity",
+                attributes: ["id", "name"],
+                required: false,
+              }
+            ],
+            required: false,
           },
           {
             model: User,
@@ -587,7 +593,16 @@ const appearStudentInDetails = async (req: Request, res: Response) => {
       },
       {model: Class,
         as: "class",
-        attributes: ["id", "classname",'grade'],
+        attributes: ["id", "classname", "grade", "gradeId"],
+        include: [
+          {
+            model: Grade,
+            as: "GradeEntity",
+            attributes: ["id", "name"],
+            required: false,
+          }
+        ],
+        required: false,
       }
       ,{model: Organization,
         as: "organization",
@@ -860,6 +875,7 @@ const addTeacher = async (req: Request, res: Response) => {
                 password,
                 roleLabel: "teacher",
               }),
+              attachments: LOGO_ATTACHMENTS,
             });
             emailSent = true;
           } catch (emailError) {

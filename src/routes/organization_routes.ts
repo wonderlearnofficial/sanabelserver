@@ -1,6 +1,6 @@
 import multer from "multer";
-import { schoolAndClassProcessMiddleware } from "../middleware/processExcelfile";
-import { createOrganizationByExcel } from "../controllers/organiztionController";
+import { schoolAndClassProcessMiddleware, processStudentMiddleware } from "../middleware/processExcelfile";
+import { createOrganizationByExcel, importOrganizations } from "../controllers/organiztionController";
 import { authenticateToken } from "../middleware/auth";
 import { checkAdmin } from "../middleware/checkrole";
 
@@ -55,4 +55,39 @@ router.post(
   upload.single("file"),
   schoolAndClassProcessMiddleware,
   createOrganizationByExcel
+);
+
+/**
+ * @swagger
+ * /organization/import:
+ *   post:
+ *     summary: Bulk-import organizations from a row-based Excel/CSV file (admin only)
+ *     description: |
+ *       One row per organization, column "name" (case-insensitive aliases accepted).
+ *       Creates the organization if missing; a no-op (still reported as success) if
+ *       it already exists. Used by the admin Import Wizard.
+ *     tags: [Organization]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Import summary with successfulEntries/failedEntries
+ */
+router.post(
+  "/import",
+  authenticateToken,
+  checkAdmin,
+  upload.single("file"),
+  processStudentMiddleware,
+  importOrganizations
 );

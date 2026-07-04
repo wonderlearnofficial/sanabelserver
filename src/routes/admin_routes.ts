@@ -1,6 +1,10 @@
 import { authenticateToken } from "../middleware/auth";
 import { checkAdmin } from "../middleware/checkrole";
 import * as adminController from "../controllers/adminController";
+import multer from "multer";
+import { processStudentMiddleware } from "../middleware/processExcelfile";
+
+const upload = multer({ dest: "uploads/" });
 
 export const router = require("express").Router();
 
@@ -204,3 +208,38 @@ router.get("/grades", authenticateToken, checkAdmin, adminController.listGrades)
 router.post("/grades", authenticateToken, checkAdmin, adminController.createGrade);
 router.patch("/grades/:gradeId", authenticateToken, checkAdmin, adminController.updateGrade);
 router.delete("/grades/:gradeId", authenticateToken, checkAdmin, adminController.deleteGrade);
+
+/**
+ * @swagger
+ * /admin/grades/import:
+ *   post:
+ *     summary: Bulk-import grades from a row-based Excel/CSV file
+ *     description: |
+ *       One row per grade, column "name" (case-insensitive). Creates the grade
+ *       if missing; a no-op (still reported as success) if it already exists.
+ *       Used by the admin Import Wizard.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         multipart/form-data:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               file:
+ *                 type: string
+ *                 format: binary
+ *     responses:
+ *       200:
+ *         description: Import summary with successfulEntries/failedEntries
+ */
+router.post(
+  "/grades/import",
+  authenticateToken,
+  checkAdmin,
+  upload.single("file"),
+  processStudentMiddleware,
+  adminController.importGrades
+);

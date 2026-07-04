@@ -14,7 +14,7 @@ import Class from "../models/class.model";
 import Grade from "../models/grade.model";
 import { generatePassword } from "../helpers/generatePassword";
 import { sendEmail } from "../helpers/sendEmail";
-import { buildAccountCreatedEmail } from "../helpers/emailTemplates";
+import { buildAccountCreatedEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
 import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
@@ -57,6 +57,26 @@ const studentData = async (req: Request, res: Response) => {
             "dateOfBirth",
           ],
         },
+        {
+          model: Class,
+          as: "Class",
+          attributes: ["id", "classname", "grade"],
+          include: [
+            {
+              model: Grade,
+              as: "GradeEntity",
+              attributes: ["id", "name"],
+              required: false,
+            }
+          ],
+          required: false,
+        },
+        {
+          model: Grade,
+          as: "GradeEntity",
+          attributes: ["id", "name"],
+          required: false,
+        }
       ],
     });
     if (!student) {
@@ -1345,6 +1365,7 @@ const addStudent = async (req: Request, res: Response) => {
                 password,
                 roleLabel: "student",
               }),
+              attachments: LOGO_ATTACHMENTS,
             });
             emailSent = true;
           } catch (emailError) {
