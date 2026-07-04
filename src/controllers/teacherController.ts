@@ -23,6 +23,7 @@ import bcrypt from "bcryptjs";
 import path from "path";
 import fs from "fs";
 import { sendEmail } from "../helpers/sendEmail";
+import { buildAccountCreatedEmail } from "../helpers/emailTemplates";
 import { generatePassword } from "../helpers/generatePassword";
 import { getImportField, DEFAULT_IMPORT_PASSWORD } from "../helpers/importFieldLookup";
 
@@ -853,6 +854,12 @@ const addTeacher = async (req: Request, res: Response) => {
               to: email,
               subject: "Your Teacher Account in Snabel elahssan",
               text: `Hello ${firstName},\n\nYour teacher account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nPlease log in and change your password immediately.`,
+              html: buildAccountCreatedEmail({
+                firstName,
+                email,
+                password,
+                roleLabel: "teacher",
+              }),
             });
             emailSent = true;
           } catch (emailError) {

@@ -14,6 +14,7 @@ import Class from "../models/class.model";
 import Grade from "../models/grade.model";
 import { generatePassword } from "../helpers/generatePassword";
 import { sendEmail } from "../helpers/sendEmail";
+import { buildAccountCreatedEmail } from "../helpers/emailTemplates";
 import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
@@ -1338,6 +1339,12 @@ const addStudent = async (req: Request, res: Response) => {
               to: email,
               subject: "Your account in Snabel elahssan",
               text: `Your email is ${email}, and your password is ${password}`,
+              html: buildAccountCreatedEmail({
+                firstName,
+                email,
+                password,
+                roleLabel: "student",
+              }),
             });
             emailSent = true;
           } catch (emailError) {
