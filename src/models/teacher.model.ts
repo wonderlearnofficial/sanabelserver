@@ -24,6 +24,14 @@ class Teacher extends Model {
           primaryKey: true,
           autoIncrement: true,
         },
+        userId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        organizationId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
       },
       {
         sequelize,

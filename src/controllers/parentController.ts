@@ -653,6 +653,7 @@ const addParent = async (req: Request, res: Response) => {
             dateOfBirth: dateOfBirth || null,
             gender: gender || null,
             isAccess: true,
+            otpVerified: true,
           });
 
           const new_parent = await Parent.create({ userId: user.id });

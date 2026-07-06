@@ -22,13 +22,24 @@ class Organization extends Model {
   declare updatedAt: CreationOptional<Date>;
   declare user: User | null;
   static associate(models: any) {
-    Organization.hasMany(Student, { foreignKey: "organizationId", as: "Students" });
-    Organization.hasMany(Teacher, { foreignKey: "organizationId", as: "Teachers" });
-    Organization.hasMany(Class, { foreignKey: "organizationId", as: "Classes" });
-    Organization.hasMany(Representative, { foreignKey: "organizationId", as: "Representatives" });
-    Organization.hasMany(Groupe, { foreignKey: "organizationId", as: "Groupes" });
+    Organization.hasMany(Student, {
+      foreignKey: "organizationId",
+      as: "Students",
+    });
+    Organization.hasMany(Teacher, {
+      foreignKey: "organizationId",
+      as: "Teachers",
+    });
+    Organization.hasMany(Class, {
+      foreignKey: "organizationId",
+      as: "Classes",
+    });
+    Organization.hasMany(models.Grade, {
+      foreignKey: "organizationId",
+      as: "Grades",
+    });
   }
-  
+
   static initModel(sequelize: Sequelize) {
     Organization.init(
       {
@@ -57,7 +68,7 @@ class Organization extends Model {
         sequelize,
         modelName: "Organization",
         timestamps: true,
-      }
+      },
     );
   }
 }

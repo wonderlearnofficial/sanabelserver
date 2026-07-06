@@ -21,6 +21,10 @@ class Parent extends Model {
           primaryKey: true,
           autoIncrement: true,
         },
+        userId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
       },
       {
         sequelize,

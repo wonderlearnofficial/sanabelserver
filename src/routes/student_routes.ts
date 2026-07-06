@@ -26,11 +26,9 @@ import {
 
 import { authenticateToken } from "../middleware/auth";
 import { checkstudent, checkAdmin } from "../middleware/checkrole";
-import multer from "multer";
+import upload from "../middleware/uploadExcel";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
 import { appearClassGrade, getClassesByGrade } from "../controllers/teacherController";
-const upload = multer({ dest: "uploads/" });
-
 export const router = require("express").Router();
 
 /**

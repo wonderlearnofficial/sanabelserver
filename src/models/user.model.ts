@@ -36,10 +36,16 @@ class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
   declare resetOTP: CreationOptional<string> | null;
   declare otpExpiry: CreationOptional<Date> | null;
   declare otpVerified: CreationOptional<boolean>;
+  declare otpAttempts: CreationOptional<number>;
+  declare otpLockedUntil: CreationOptional<Date> | null;
+  declare tokenVersion: CreationOptional<number>;
   declare gender: CreationOptional<String>;
   declare dateOfBirth: CreationOptional<Date>;
   declare profileImg: CreationOptional<Record<string, any> | null>;
   declare isAccess: CreationOptional<Boolean>;
+  declare seenGuides: CreationOptional<string[]>;
+  declare pushSubscription: CreationOptional<Record<string, any> | null>;
+  declare location: CreationOptional<Record<string, any> | null>;
   static associate(models: any) {
     User.hasMany(Student, { foreignKey: "userId", as: "Students" });
     User.hasMany(Teacher, { foreignKey: "userId", as: "Teachers" });
@@ -94,6 +100,21 @@ class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
           allowNull: true,
           defaultValue: false,
         },
+        otpAttempts: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          defaultValue: 0,
+        },
+        otpLockedUntil: {
+          type: DataTypes.DATE,
+          allowNull: true,
+        },
+        // Bumped on logout to invalidate every outstanding refresh token.
+        tokenVersion: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          defaultValue: 0,
+        },
         gender: {
           type: DataTypes.STRING,
           allowNull: true,
@@ -108,6 +129,19 @@ class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
           defaultValue: false,
         },
         profileImg: {
+          type: DataTypes.JSON,
+          allowNull: true,
+        },
+        seenGuides: {
+          type: DataTypes.JSON,
+          allowNull: true,
+          defaultValue: [],
+        },
+        pushSubscription: {
+          type: DataTypes.JSON,
+          allowNull: true,
+        },
+        location: {
           type: DataTypes.JSON,
           allowNull: true,
         },

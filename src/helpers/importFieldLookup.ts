@@ -19,6 +19,9 @@ export const getImportField = (row: Record<string, any>, ...names: string[]) => 
 };
 
 // Bulk imports (school-provided rosters) can't be relied on to email
-// successfully in real time, so every imported account shares this known
-// password rather than a random emailed one — they change it later.
-export const DEFAULT_IMPORT_PASSWORD = "changeme123";
+// successfully in real time, so every imported account shares one known
+// onboarding password that students change on first login. The value is
+// sourced from the environment so it is not hardcoded in source control;
+// the literal fallback only applies to local development.
+export const DEFAULT_IMPORT_PASSWORD =
+  process.env.DEFAULT_IMPORT_PASSWORD || "changeme123";

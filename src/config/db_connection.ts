@@ -104,10 +104,15 @@ const rundb = async () => {
   });
 
   try {
-    await sequelize.sync({ alter: true });
-    logger.info("Database & models table created/updated!");
+    // In production we never auto-ALTER the live schema — that risks data loss.
+    // We only create missing tables; incremental schema changes are applied via
+    // sequelize-cli migrations (see server/database/migrations). Development
+    // keeps alter:true for fast iteration.
+    const isProduction = process.env.NODE_ENV === "production";
+    await sequelize.sync(isProduction ? undefined : { alter: true });
+    logger.info("Database & models synced", { alter: !isProduction });
   } catch (error) {
-    logger.error("Unable to connect to the database schema:", { error });
+    logger.error("Unable to sync database schema:", { error });
   }
 
 };
@@ -115,15 +120,18 @@ const rundb = async () => {
 const seedGradesAndMigrate = async () => {
   try {
     logger.info("🔍 Seeding and migrating grades...");
-    await Grade.sync();
+    // Same policy as the main sync: no destructive ALTER in production.
+    const isProduction = process.env.NODE_ENV === "production";
+    const syncOpts = isProduction ? undefined : { alter: true };
+    await Grade.sync(syncOpts);
     try {
-      await Class.sync({ alter: true });
+      await Class.sync(syncOpts);
     } catch (e) {
       logger.warn("Class table sync alter failed, retrying standard sync:", e);
       await Class.sync();
     }
     try {
-      await Student.sync({ alter: true });
+      await Student.sync(syncOpts);
     } catch (e) {
       logger.warn("Student table sync alter failed, retrying standard sync:", e);
       await Student.sync();

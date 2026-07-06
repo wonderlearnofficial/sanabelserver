@@ -73,6 +73,22 @@ class Student extends Model {
           primaryKey: true,
           autoIncrement: true,
         },
+        userId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        ParentId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        organizationId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        classId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
         grade: {
           type: DataTypes.STRING,
           allowNull: true,

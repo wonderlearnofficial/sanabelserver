@@ -1,6 +1,6 @@
 import { Response, Request,NextFunction } from "express";
 import { authenticateToken } from "../middleware/auth";
-import multer from "multer";
+import upload from "../middleware/uploadExcel";
 
 import { checkTeacher, checkAdmin } from "../middleware/checkrole";
 import {
@@ -31,8 +31,6 @@ import {
   approveRequestAsTeacher,
   denyRequestAsTeacher,
 } from "../controllers/missionController";
-const upload = multer({ dest: "uploads/" });
-
 export const router = require("express").Router();
 /**
  * @swagger

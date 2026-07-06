@@ -18,10 +18,15 @@ import logger from "../config/logger";
 // check the client uses to decide whether to show "Link Parent" upfront).
 const getEligibleApprovers = async (student: Student) => {
   const parentIds = student.ParentId ? [student.ParentId] : [];
-  const teachers = await Teacher.findAll({
-    where: { organizationId: student.organizationId },
-  });
-  const teacherIds = teachers.map((t) => t.id);
+  let teacherIds: number[] = [];
+
+  if (student.classId) {
+    const studentClass = await Class.findByPk(student.classId);
+    if (studentClass && (studentClass as any).teacherId) {
+      teacherIds = [(studentClass as any).teacherId];
+    }
+  }
+
   return { parentIds, teacherIds };
 };
 
@@ -34,7 +39,7 @@ const requestApproval = async (req: Request, res: Response) => {
     const student = await Student.findOne({ where: { userId: user.id } });
     if (!student) return res.status(404).json({ message: "Student not found" });
 
-    const { taskId, missionDate } = req.body;
+    const { taskId, missionDate, approverId, approverType } = req.body;
     if (typeof taskId !== "number") {
       return res.status(400).json({ message: "Invalid taskId parameter" });
     }
@@ -54,9 +59,21 @@ const requestApproval = async (req: Request, res: Response) => {
     const task = await Task.findByPk(taskId);
     if (!task) return res.status(404).json({ message: "Task not found" });
 
-    // Snapshot who's eligible to approve right now — a parent unlinking
-    // later shouldn't retroactively invalidate an already-pending request.
-    const { parentIds, teacherIds } = await getEligibleApprovers(student);
+    let parentIds: number[] = [];
+    let teacherIds: number[] = [];
+
+    if (approverId && approverType) {
+      if (approverType === "parent") {
+        parentIds = [Number(approverId)];
+      } else if (approverType === "teacher") {
+        teacherIds = [Number(approverId)];
+      }
+    } else {
+      // Fallback/Legacy: snapshot both
+      const eligible = await getEligibleApprovers(student);
+      parentIds = eligible.parentIds;
+      teacherIds = eligible.teacherIds;
+    }
 
     if (parentIds.length === 0 && teacherIds.length === 0) {
       return res.status(400).json({
@@ -151,6 +168,17 @@ const resolveApprovalRequest = async ({
         approverType,
         transaction: t,
       });
+
+      // Delete other pending requests for the same student and mission to prevent duplicates
+      await MissionApprovalRequest.destroy({
+        where: {
+          studentId: request.studentId,
+          missionId: request.missionId,
+          status: ApprovalStatus.Pending,
+        },
+        transaction: t,
+      });
+      logger.info(`Cleaned up duplicate pending requests for student ${request.studentId} and mission ${request.missionId}`);
     }
 
     const updated = await MissionApprovalRequest.findByPk(requestId, {
@@ -358,10 +386,12 @@ const getMyApprovers = async (req: Request, res: Response) => {
 
     const approvers = [
       ...parents.map((p: any) => ({
+        id: p.id,
         type: "parent",
         name: `${p.User?.firstName || ""} ${p.User?.lastName || ""}`.trim(),
       })),
       ...teachers.map((t: any) => ({
+        id: t.id,
         type: "teacher",
         name: `${t.User?.firstName || ""} ${t.User?.lastName || ""}`.trim(),
       })),

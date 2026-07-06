@@ -55,6 +55,7 @@ const studentData = async (req: Request, res: Response) => {
             "profileImg",
             "gender",
             "dateOfBirth",
+            "seenGuides",
           ],
         },
         {
@@ -950,11 +951,21 @@ const appearLeaderboard = async (req: Request, res: Response) => {
     if (grade) classFilters.grade = grade;
 
     if (teacher) {
-      // If teacher has no organizationId, return empty result
-      if (!teacher.organizationId) {
+      let orgId = teacher.organizationId;
+      if (!orgId) {
+        // Fallback: look up the teacher's classes to resolve organizationId
+        const firstClass = await Class.findOne({
+          where: { teacherId: teacher.id },
+          attributes: ["organizationId"],
+        });
+        if (firstClass) {
+          orgId = firstClass.organizationId;
+        }
+      }
+      if (!orgId) {
         return res.status(200).json({ students: [] });
       }
-      studentFilters.organizationId = teacher.organizationId;
+      studentFilters.organizationId = orgId;
     } else if (student) {
       // For student: if organizationId is null, filter students with organizationId null,
       // else filter by student's organizationId
@@ -1336,6 +1347,7 @@ const addStudent = async (req: Request, res: Response) => {
             dateOfBirth: dateOfBirth || null,
             gender: gender || null,
             isAccess: true,
+            otpVerified: true,
           });
           const connectCode = await generateUniqueConnectCode();
           const new_student = await Student.create({

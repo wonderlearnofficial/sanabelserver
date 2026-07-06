@@ -1,11 +1,10 @@
-import multer from "multer";
+import upload from "../middleware/uploadExcel";
 import { schoolAndClassProcessMiddleware, processStudentMiddleware } from "../middleware/processExcelfile";
 import { createOrganizationByExcel, importOrganizations } from "../controllers/organiztionController";
 import { authenticateToken } from "../middleware/auth";
 import { checkAdmin } from "../middleware/checkrole";
 
 export const router = require("express").Router();
-const upload = multer({ dest: "uploads/" });
 /**
  * @swagger
  * /organization/create:

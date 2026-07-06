@@ -22,10 +22,8 @@ import {
   approveRequestAsParent,
   denyRequestAsParent,
 } from "../controllers/missionController";
-import multer from "multer";
+import upload from "../middleware/uploadExcel";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
-
-const upload = multer({ dest: "uploads/" });
 
 export const router = require("express").Router();
 

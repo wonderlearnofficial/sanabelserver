@@ -5,6 +5,11 @@ import logger from "../config/logger";
 import generateOTP from "../helpers/generateOtp";
 import { sendEmail } from "../helpers/sendEmail";
 import { buildOtpEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
+import {
+  isOtpLocked,
+  recordOtpFailure,
+  clearOtpFailures,
+} from "../helpers/otpGuard";
 
 const sendOtp = async (req: Request, res: Response) => {
   const { email } = req.body;
@@ -80,17 +85,27 @@ const verifyOTP = async (req: Request, res: Response) => {
       return res.status(404).json({ status: 404, message: "User not found" });
     }
 
+    // Reject while the account is temporarily locked from repeated wrong codes
+    if (isOtpLocked(user)) {
+      return res.status(429).json({
+        status: 429,
+        message: "Too many incorrect attempts. Please try again later.",
+      });
+    }
+
     // Verify OTP and check expiry
     const isOtpValid =
       user.resetOTP === otp && user.otpExpiry && user.otpExpiry > new Date();
     if (!isOtpValid) {
+      await recordOtpFailure(user);
       return res.status(400).json({
         status: 400,
         message: "Invalid or expired OTP",
       });
     }
 
-    // OTP is valid, mark the user as verified
+    // OTP is valid, mark the user as verified and clear the failure counter
+    await clearOtpFailures(user);
     await user.update({ isAccess: true, resetOTP: null, otpExpiry: null });
 
     return res.status(200).json({

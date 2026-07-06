@@ -1,32 +1,39 @@
 /**
  * Returns a fully self-contained, responsive HTML email for OTP delivery.
- * Logos are embedded as base64 data URIs (using small, pre-resized copies —
- * see assets/splash-email.png / wonderlearn-email.png) rather than linked by
- * public URL, so they render even when BASE_URL isn't reachable (e.g. the
- * server is down or the URL changed) and stay well under Gmail's 102 KB clip
- * limit despite being inlined.
- * Compatible with Outlook, Gmail, Apple Mail, and all major clients.
+ * Logos are referenced via cid: (MIME inline attachment) rather than a
+ * data: URI or public image URL — Gmail (web + app) strips <img src="data:...">
+ * entirely, and a public-URL logo silently breaks if BASE_URL ever points
+ * somewhere unreachable. cid: attachments are the one technique every major
+ * mail client (Gmail included) actually renders. Callers must pass
+ * LOGO_ATTACHMENTS through to sendEmail()'s `attachments` option.
  */
 
-import fs from "fs";
 import path from "path";
 
-function loadLogoDataUri(filename: string): string {
-  const filePath = path.resolve(__dirname, "../../assets", filename);
-  const buffer = fs.readFileSync(filePath);
-  return `data:image/png;base64,${buffer.toString("base64")}`;
-}
+export const SANABEL_LOGO_CID = "sanabel-logo";
+export const WONDERLEARN_LOGO_CID = "wonderlearn-logo";
 
-// Computed once at module load — both logos are tiny (see assets/*-email.png)
-// so this is cheap and avoids re-reading/re-encoding on every email sent.
-const sanabelLogoDataUri = loadLogoDataUri("splash-email.png");
-const wonderlearnLogoDataUri = loadLogoDataUri("wonderlearn-email.png");
+// Small, pre-resized copies (~30KB/~15KB) — see assets/splash-email.png and
+// assets/wonderlearn-email.png — kept separate from the full-size originals
+// used elsewhere in the app so attaching them to every email stays cheap.
+export const LOGO_ATTACHMENTS = [
+  {
+    filename: "sanabel-logo.png",
+    path: path.resolve(__dirname, "../../assets/splash-email.png"),
+    cid: SANABEL_LOGO_CID,
+  },
+  {
+    filename: "wonderlearn-logo.png",
+    path: path.resolve(__dirname, "../../assets/wonderlearn-email.png"),
+    cid: WONDERLEARN_LOGO_CID,
+  },
+];
 
 export function buildOtpEmail(otp: string): string {
   const digits = otp.split(""); // e.g. ['1','2','3','4']
 
-  const sanabelUri = sanabelLogoDataUri;
-  const wonderlearnUri = wonderlearnLogoDataUri;
+  const sanabelUri = `cid:${SANABEL_LOGO_CID}`;
+  const wonderlearnUri = `cid:${WONDERLEARN_LOGO_CID}`;
 
   const digitBoxes = digits
     .map(
@@ -240,8 +247,8 @@ export function buildAccountCreatedEmail(params: {
   roleLabel: string; // e.g. "student" or "teacher"
 }): string {
   const { firstName, email, password, roleLabel } = params;
-  const sanabelUri = sanabelLogoDataUri;
-  const wonderlearnUri = wonderlearnLogoDataUri;
+  const sanabelUri = `cid:${SANABEL_LOGO_CID}`;
+  const wonderlearnUri = `cid:${WONDERLEARN_LOGO_CID}`;
 
   return `<!DOCTYPE html>
 <html lang="en" dir="ltr">

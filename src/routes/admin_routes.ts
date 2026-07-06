@@ -1,10 +1,8 @@
 import { authenticateToken } from "../middleware/auth";
 import { checkAdmin } from "../middleware/checkrole";
 import * as adminController from "../controllers/adminController";
-import multer from "multer";
+import upload from "../middleware/uploadExcel";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
-
-const upload = multer({ dest: "uploads/" });
 
 export const router = require("express").Router();
 

@@ -29,6 +29,14 @@ class Class extends Model {
           primaryKey: true,
           autoIncrement: true,
         },
+        organizationId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
+        teacherId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
         classname: {
           type: DataTypes.STRING,
           allowNull: false,

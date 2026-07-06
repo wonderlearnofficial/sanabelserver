@@ -22,6 +22,13 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
 
   jwt.verify(token, secret, (err, user) => {
     if (err) {
+      // Signal expiry distinctly so the client can silently refresh; any other
+      // verification failure is a genuinely invalid token.
+      if (err.name === "TokenExpiredError") {
+        return res
+          .status(401)
+          .json({ status: 401, code: "TOKEN_EXPIRED", message: "Token expired" });
+      }
       return res.status(403).json({ status: 403, message: "Token is invalid" });
     }
 

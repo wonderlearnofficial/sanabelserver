@@ -322,3 +322,76 @@ router.patch("/verfication-auth", authController.verifyOTP);
  */
 router.patch("/update-passowrd", authenticateToken, updatePassword);
 
+/**
+ * @swagger
+ * /users/refresh:
+ *   post:
+ *     summary: Exchange a refresh token for a new access token
+ *     tags: [User]
+ */
+router.post("/refresh", userController.refreshAccessToken);
+
+/**
+ * @swagger
+ * /users/logout:
+ *   post:
+ *     summary: Invalidate the current user's refresh tokens
+ *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post("/logout", authenticateToken, userController.logout);
+
+/**
+ * @swagger
+ * /users/seen-guides:
+ *   patch:
+ *     summary: Mark a contextual onboarding guide as seen for the current user
+ *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required:
+ *               - guideId
+ *             properties:
+ *               guideId:
+ *                 type: string
+ *                 example: "student-home"
+ *     responses:
+ *       200:
+ *         description: Guide marked as seen
+ *       400:
+ *         description: Invalid guideId parameter
+ *       404:
+ *         description: User not found
+ *       500:
+ *         description: Internal server error
+ */
+router.patch("/seen-guides", authenticateToken, userController.markGuideSeen);
+
+/**
+ * @swagger
+ * /users/subscribe-push:
+ *   post:
+ *     summary: Subscribe to push notifications
+ *     tags: [User]
+ *     security:
+ *       - bearerAuth: []
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               subscription:
+ *                 type: object
+ *               location:
+ *                 type: object
+ */
+router.post("/subscribe-push", authenticateToken, userController.subscribePushNotification);

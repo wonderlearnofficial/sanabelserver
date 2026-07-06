@@ -32,7 +32,7 @@ const getAdminProfile = async (req: Request, res: Response) => {
   try {
     const admin = await User.findOne({
       where: { id: user.id, role: "Admin" },
-      attributes: ["id", "firstName", "lastName", "email", "role"],
+      attributes: ["id", "firstName", "lastName", "email", "role", "seenGuides"],
     });
 
     if (!admin) {
@@ -974,10 +974,11 @@ const deleteUser = async (req: Request, res: Response) => {
 
 const listClasses = async (req: Request, res: Response) => {
   try {
-    const { search, organizationId, page = "1", limit = "20" } = req.query;
+    const { search, organizationId, gradeId, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
     if (organizationId) where.organizationId = organizationId;
+    if (gradeId) where.gradeId = gradeId;
     if (search) where.classname = { [Op.like]: `%${String(search)}%` };
 
     const pageNum = Number(page) || 1;
@@ -1153,9 +1154,10 @@ const resetUserPassword = async (req: Request, res: Response) => {
 
 const listGrades = async (req: Request, res: Response) => {
   try {
-    const { search, page = "1", limit = "20" } = req.query;
+    const { search, organizationId, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
+    if (organizationId) where.organizationId = organizationId;
     if (search) where.name = { [Op.like]: `%${String(search)}%` };
 
     const pageNum = Number(page) || 1;
@@ -1167,6 +1169,9 @@ const listGrades = async (req: Request, res: Response) => {
       limit: limitNum,
       offset,
       order: [["name", "ASC"]],
+      include: [
+        { model: Organization, as: "Organization", attributes: ["id", "name"], required: false }
+      ]
     });
 
     return res.status(200).json({
@@ -1183,7 +1188,7 @@ const listGrades = async (req: Request, res: Response) => {
 
 const createGrade = async (req: Request, res: Response) => {
   try {
-    const { name } = req.body;
+    const { name, organizationId } = req.body;
 
     if (!name || typeof name !== "string") {
       return res.status(400).json({ message: "name is required" });
@@ -1191,12 +1196,20 @@ const createGrade = async (req: Request, res: Response) => {
 
     const normalizedName = name.trim().toLowerCase();
 
-    const existing = await Grade.findOne({ where: { name: normalizedName } });
+    const existing = await Grade.findOne({
+      where: {
+        name: normalizedName,
+        organizationId: organizationId ? Number(organizationId) : null,
+      },
+    });
     if (existing) {
-      return res.status(409).json({ message: "Grade already exists" });
+      return res.status(409).json({ message: "Grade already exists in this school" });
     }
 
-    const grade = await Grade.create({ name: normalizedName });
+    const grade = await Grade.create({
+      name: normalizedName,
+      organizationId: organizationId ? Number(organizationId) : null,
+    });
     return res.status(201).json({ data: grade });
   } catch (error) {
     logger.error("Error in createGrade:", { error });
@@ -1263,20 +1276,30 @@ const updateGrade = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid grade id" });
     }
 
-    const { name } = req.body;
+    const { name, organizationId } = req.body;
 
     const grade = await Grade.findByPk(gradeId);
     if (!grade) {
       return res.status(404).json({ message: "Grade not found" });
     }
 
-    if (name) {
-      const normalizedName = name.trim().toLowerCase();
-      const existing = await Grade.findOne({ where: { name: normalizedName } });
+    const resolvedOrgId = organizationId !== undefined ? (organizationId ? Number(organizationId) : null) : grade.organizationId;
+    const normalizedName = name ? name.trim().toLowerCase() : grade.name;
+
+    if (name || organizationId !== undefined) {
+      const existing = await Grade.findOne({
+        where: {
+          name: normalizedName,
+          organizationId: resolvedOrgId,
+        },
+      });
       if (existing && existing.id !== gradeId) {
-        return res.status(409).json({ message: "Grade name already exists" });
+        return res.status(409).json({ message: "Grade name already exists in this school" });
       }
-      await grade.update({ name: normalizedName });
+      await grade.update({
+        name: normalizedName,
+        organizationId: resolvedOrgId,
+      });
     }
 
     return res.status(200).json({ data: grade });

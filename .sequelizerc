@@ -1,0 +1,9 @@
+const path = require("path");
+
+// Points sequelize-cli at a standalone, env-driven config and a migrations
+// folder that is independent of the app's src/ tree. Run migrations with:
+//   npx sequelize-cli db:migrate
+module.exports = {
+  config: path.resolve("database", "config.js"),
+  "migrations-path": path.resolve("database", "migrations"),
+};

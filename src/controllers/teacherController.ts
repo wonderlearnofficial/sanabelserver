@@ -845,6 +845,7 @@ const addTeacher = async (req: Request, res: Response) => {
             dateOfBirth,
             gender,
             isAccess: true,
+            otpVerified: true,
           });
 
           const new_teacher = await Teacher.create({
@@ -938,8 +939,16 @@ const appearClassGrade =  async (req: Request, res: Response) => {
       return res.status(403).json({ message: "Access denied. Not a teacher or student." });
     }
 
+    let organizationId = teacher?.organizationId || student?.organizationId;
+    if (!organizationId && teacher) {
+      const firstClass = await Class.findOne({ where: { teacherId: teacher.id, organizationId: { [Op.ne]: null } } });
+      if (firstClass) {
+        organizationId = firstClass.organizationId;
+      }
+    }
+
     const classGrades = await Class.findAll({
-      where: { organizationId: teacher?.organizationId || student?.organizationId },
+      where: { organizationId },
       attributes: ["gradeId", "grade"],
       group: ["gradeId", "grade"],
       include: [
