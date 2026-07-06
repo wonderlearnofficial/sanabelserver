@@ -109,8 +109,9 @@ const rundb = async () => {
     // sequelize-cli migrations (see server/database/migrations). Development
     // keeps alter:true for fast iteration.
     const isProduction = process.env.NODE_ENV === "production";
-    await sequelize.sync(isProduction ? undefined : { alter: true });
-    logger.info("Database & models synced", { alter: !isProduction });
+    // Temporarily enabled alter: true in production to sync pushSubscription and location columns
+    await sequelize.sync({ alter: true });
+    logger.info("Database & models synced", { alter: true });
   } catch (error) {
     logger.error("Unable to sync database schema:", { error });
   }
