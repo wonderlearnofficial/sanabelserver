@@ -54,6 +54,7 @@ const corsOptions = {
     if (!origin) return callback(null, true);
     if (process.env.NODE_ENV !== "production") return callback(null, true);
     if (allowedOrigins.includes(origin)) return callback(null, true);
+    if (origin.endsWith(".up.railway.app")) return callback(null, true);
     return callback(new Error("Not allowed by CORS"));
   },
 };
