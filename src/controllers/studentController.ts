@@ -12,9 +12,9 @@ import Challenge from "../models/challenge.model";
 import Organization from "../models/oraganization.model";
 import Class from "../models/class.model";
 import Grade from "../models/grade.model";
-import { generatePassword } from "../helpers/generatePassword";
+import { generatePassword, generateSixDigitPassword } from "../helpers/generatePassword";
 import { sendEmail } from "../helpers/sendEmail";
-import { buildAccountCreatedEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
+import { buildAccountCreatedEmail, LOGO_ATTACHMENTS, getAppUrl } from "../helpers/emailTemplates";
 import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
@@ -25,7 +25,7 @@ import TaskCategory from "../models/task-category.model";
 import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
-import { getImportField, DEFAULT_IMPORT_PASSWORD } from "../helpers/importFieldLookup";
+import { getImportField } from "../helpers/importFieldLookup";
 
 declare global {
   namespace Express {
@@ -1334,7 +1334,7 @@ const addStudent = async (req: Request, res: Response) => {
           }
 
           // ✅ Create User & Student
-          const password = DEFAULT_IMPORT_PASSWORD;
+          const password = generateSixDigitPassword();
           const hashedPassword = bcrypt.hashSync(password, 10);
           worksheet.addRow({ email, password });
 
@@ -1370,7 +1370,7 @@ const addStudent = async (req: Request, res: Response) => {
             await sendEmail({
               to: email,
               subject: "Your account in Snabel elahssan",
-              text: `Your email is ${email}, and your password is ${password}`,
+              text: `Your email is ${email}, and your password is ${password}. Log in at ${getAppUrl()}`,
               html: buildAccountCreatedEmail({
                 firstName,
                 email,

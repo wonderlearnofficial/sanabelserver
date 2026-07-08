@@ -13,6 +13,10 @@ import path from "path";
 export const SANABEL_LOGO_CID = "sanabel-logo";
 export const WONDERLEARN_LOGO_CID = "wonderlearn-logo";
 
+export function getAppUrl(): string {
+  return process.env.CLIENT_APP_URL || "https://sanabel-tau.vercel.app";
+}
+
 // Small, pre-resized copies (~30KB/~15KB) — see assets/splash-email.png and
 // assets/wonderlearn-email.png — kept separate from the full-size originals
 // used elsewhere in the app so attaching them to every email stays cheap.
@@ -249,6 +253,7 @@ export function buildAccountCreatedEmail(params: {
   const { firstName, email, password, roleLabel } = params;
   const sanabelUri = `cid:${SANABEL_LOGO_CID}`;
   const wonderlearnUri = `cid:${WONDERLEARN_LOGO_CID}`;
+  const appUrl = getAppUrl();
 
   return `<!DOCTYPE html>
 <html lang="en" dir="ltr">
@@ -353,11 +358,26 @@ export function buildAccountCreatedEmail(params: {
 
               <table cellpadding="0" cellspacing="0" border="0" width="100%"
                      style="background:#f0fdf4;border-left:4px solid #2d8c56;
-                            border-radius:0 12px 12px 0;padding:18px 20px;">
+                            border-radius:0 12px 12px 0;padding:18px 20px;margin-bottom:28px;">
                 <tr>
                   <td style="font-size:13px;color:#276749;line-height:1.7;">
                     <strong>🔒 Please change your password</strong><br/>
                     Log in and update your password from your profile whenever you like.
+                  </td>
+                </tr>
+              </table>
+
+              <table cellpadding="0" cellspacing="0" border="0" width="100%">
+                <tr>
+                  <td align="center">
+                    <a href="${appUrl}" target="_blank"
+                       style="display:inline-block;padding:14px 36px;background:linear-gradient(135deg,#1a5c38,#2d8c56);
+                              color:#ffffff;font-size:15px;font-weight:700;text-decoration:none;border-radius:12px;">
+                      Log in to Sanabel Al-Ihsan
+                    </a>
+                    <p style="margin:14px 0 0;font-size:12px;color:#9aa5b1;word-break:break-all;">
+                      Or open this link: <a href="${appUrl}" style="color:#2d8c56;">${appUrl}</a>
+                    </p>
                   </td>
                 </tr>
               </table>

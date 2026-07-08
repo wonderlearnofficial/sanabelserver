@@ -415,10 +415,9 @@ const updateStudent = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Student not found" });
     }
 
-    const userRecord = await User.findOne({ where: { id: student.userId } });
-    if (!userRecord) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    const userRecord = student.userId
+      ? await User.findOne({ where: { id: student.userId } })
+      : null;
 
     const resultingOrganizationId =
       organizationId !== undefined
@@ -478,7 +477,7 @@ const updateStudent = async (req: Request, res: Response) => {
     }
     if (resultingClassId !== undefined) studentUpdateData.classId = resultingClassId;
 
-    if (Object.keys(userUpdateData).length > 0) {
+    if (userRecord && Object.keys(userUpdateData).length > 0) {
       await userRecord.update(userUpdateData);
     }
     if (Object.keys(studentUpdateData).length > 0) {
@@ -486,7 +485,10 @@ const updateStudent = async (req: Request, res: Response) => {
     }
 
     return res.status(200).json({ message: "Student updated successfully" });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({ message: "Email already in use" });
+    }
     logger.error("Error in updateStudent:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -504,16 +506,15 @@ const deleteStudent = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Student not found" });
     }
 
-    const userRecord = await User.findOne({ where: { id: student.userId } });
-    if (!userRecord) {
-      return res.status(404).json({ message: "User not found" });
-    }
+    const userRecord = student.userId
+      ? await User.findOne({ where: { id: student.userId } })
+      : null;
 
     await StudentTask.destroy({ where: { studentId: student.id } });
     await StudentChallenge.destroy({ where: { studentId: student.id } });
 
     await student.destroy();
-    await userRecord.destroy();
+    if (userRecord) await userRecord.destroy();
 
     return res.status(200).json({ message: "Student deleted successfully" });
   } catch (error) {
@@ -528,10 +529,11 @@ const deleteStudent = async (req: Request, res: Response) => {
 
 const listUsers = async (req: Request, res: Response) => {
   try {
-    const { search, role, page = "1", limit = "20" } = req.query;
+    const { search, role, verified, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
     if (role) where.role = role;
+    if (verified === "true") where.isAccess = true;
     if (search) {
       where[Op.or] = [
         { firstName: { [Op.like]: `%${String(search)}%` } },
@@ -794,7 +796,10 @@ const createUser = async (req: Request, res: Response) => {
       },
       password,
     });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({ message: "Email already in use" });
+    }
     logger.error("Error in createUser:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -921,7 +926,10 @@ const updateUser = async (req: Request, res: Response) => {
     }
 
     return res.status(200).json({ message: "User updated successfully" });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({ message: "Email already in use" });
+    }
     logger.error("Error in updateUser:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -1196,6 +1204,13 @@ const createGrade = async (req: Request, res: Response) => {
 
     const normalizedName = name.trim().toLowerCase();
 
+    if (organizationId) {
+      const organization = await Organization.findByPk(Number(organizationId));
+      if (!organization) {
+        return res.status(400).json({ message: "Target organization does not exist" });
+      }
+    }
+
     const existing = await Grade.findOne({
       where: {
         name: normalizedName,
@@ -1211,7 +1226,10 @@ const createGrade = async (req: Request, res: Response) => {
       organizationId: organizationId ? Number(organizationId) : null,
     });
     return res.status(201).json({ data: grade });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({ message: "Grade already exists in this school" });
+    }
     logger.error("Error in createGrade:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -1286,6 +1304,13 @@ const updateGrade = async (req: Request, res: Response) => {
     const resolvedOrgId = organizationId !== undefined ? (organizationId ? Number(organizationId) : null) : grade.organizationId;
     const normalizedName = name ? name.trim().toLowerCase() : grade.name;
 
+    if (resolvedOrgId) {
+      const organization = await Organization.findByPk(resolvedOrgId);
+      if (!organization) {
+        return res.status(400).json({ message: "Target organization does not exist" });
+      }
+    }
+
     if (name || organizationId !== undefined) {
       const existing = await Grade.findOne({
         where: {
@@ -1303,7 +1328,10 @@ const updateGrade = async (req: Request, res: Response) => {
     }
 
     return res.status(200).json({ data: grade });
-  } catch (error) {
+  } catch (error: any) {
+    if (error?.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({ message: "Grade name already exists in this school" });
+    }
     logger.error("Error in updateGrade:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }

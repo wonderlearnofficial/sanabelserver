@@ -23,9 +23,9 @@ import bcrypt from "bcryptjs";
 import path from "path";
 import fs from "fs";
 import { sendEmail } from "../helpers/sendEmail";
-import { buildAccountCreatedEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
-import { generatePassword } from "../helpers/generatePassword";
-import { getImportField, DEFAULT_IMPORT_PASSWORD } from "../helpers/importFieldLookup";
+import { buildAccountCreatedEmail, LOGO_ATTACHMENTS, getAppUrl } from "../helpers/emailTemplates";
+import { generatePassword, generateSixDigitPassword } from "../helpers/generatePassword";
+import { getImportField } from "../helpers/importFieldLookup";
 
 declare global {
   namespace Express {
@@ -833,7 +833,7 @@ const addTeacher = async (req: Request, res: Response) => {
             continue;
           }
 
-          const password = DEFAULT_IMPORT_PASSWORD;
+          const password = generateSixDigitPassword();
           const hashedPassword = bcrypt.hashSync(password, 10);
 
           const user = await User.create({
@@ -869,7 +869,7 @@ const addTeacher = async (req: Request, res: Response) => {
             await sendEmail({
               to: email,
               subject: "Your Teacher Account in Snabel elahssan",
-              text: `Hello ${firstName},\n\nYour teacher account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nPlease log in and change your password immediately.`,
+              text: `Hello ${firstName},\n\nYour teacher account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nLog in at ${getAppUrl()}\n\nPlease change your password immediately.`,
               html: buildAccountCreatedEmail({
                 firstName,
                 email,

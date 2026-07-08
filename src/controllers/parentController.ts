@@ -19,8 +19,9 @@ import Organization from "../models/oraganization.model";
 import StudentChallenge, { CompletionStatus } from "../models/student-challenge.model";
 import bcrypt from "bcryptjs";
 import { sendEmail } from "../helpers/sendEmail";
-import { buildAccountCreatedEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
-import { getImportField, DEFAULT_IMPORT_PASSWORD } from "../helpers/importFieldLookup";
+import { buildAccountCreatedEmail, LOGO_ATTACHMENTS, getAppUrl } from "../helpers/emailTemplates";
+import { getImportField } from "../helpers/importFieldLookup";
+import { generateSixDigitPassword } from "../helpers/generatePassword";
 
 const parentData = async (req: Request, res: Response) => {
   const user = (req as Request & { user: JwtPayload | undefined }).user;
@@ -641,7 +642,7 @@ const addParent = async (req: Request, res: Response) => {
             continue;
           }
 
-          const password = DEFAULT_IMPORT_PASSWORD;
+          const password = generateSixDigitPassword();
           const hashedPassword = bcrypt.hashSync(password, 10);
 
           const user = await User.create({
@@ -663,7 +664,7 @@ const addParent = async (req: Request, res: Response) => {
             await sendEmail({
               to: email,
               subject: "Your account in Snabel elahssan",
-              text: `Your email is ${email}, and your password is ${password}`,
+              text: `Your email is ${email}, and your password is ${password}. Log in at ${getAppUrl()}`,
               html: buildAccountCreatedEmail({ firstName, email, password, roleLabel: "parent" }),
               attachments: LOGO_ATTACHMENTS,
             });

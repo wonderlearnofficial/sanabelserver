@@ -29,4 +29,12 @@ function generatePassword(length = 12) {
 
   return password.join("");
 }
-export { generatePassword };
+// Bulk-imported accounts (students especially) need something short enough
+// to type on first login rather than a 12-char mixed password — but each
+// one must still be random and distinct, or every imported user shares one
+// known password and can log into anyone else's account.
+function generateSixDigitPassword(): string {
+  return String(Math.floor(100000 + Math.random() * 900000));
+}
+
+export { generatePassword, generateSixDigitPassword };

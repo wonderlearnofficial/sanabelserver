@@ -104,14 +104,16 @@ const rundb = async () => {
   });
 
   try {
-    // In production we never auto-ALTER the live schema — that risks data loss.
-    // We only create missing tables; incremental schema changes are applied via
-    // sequelize-cli migrations (see server/database/migrations). Development
-    // keeps alter:true for fast iteration.
-    const isProduction = process.env.NODE_ENV === "production";
-    // Temporarily enabled alter: true in production to sync pushSubscription and location columns
-    await sequelize.sync({ alter: true });
-    logger.info("Database & models synced", { alter: true });
+    // We never auto-ALTER the live schema here — on this Sequelize version,
+    // `sync({ alter: true })` re-adds a foreign key constraint for every
+    // association on *every* boot instead of detecting the one already
+    // there, which silently piled up thousands of duplicate constraints
+    // over repeated restarts/redeploys (see the dedupe-foreign-keys
+    // migration). This only creates missing tables; column/constraint
+    // changes go through sequelize-cli migrations (see
+    // server/database/migrations).
+    await sequelize.sync();
+    logger.info("Database & models synced", { alter: false });
   } catch (error) {
     logger.error("Unable to sync database schema:", { error });
   }
@@ -121,22 +123,11 @@ const rundb = async () => {
 const seedGradesAndMigrate = async () => {
   try {
     logger.info("🔍 Seeding and migrating grades...");
-    // Same policy as the main sync: no destructive ALTER in production.
-    const isProduction = process.env.NODE_ENV === "production";
-    const syncOpts = isProduction ? undefined : { alter: true };
-    await Grade.sync(syncOpts);
-    try {
-      await Class.sync(syncOpts);
-    } catch (e) {
-      logger.warn("Class table sync alter failed, retrying standard sync:", e);
-      await Class.sync();
-    }
-    try {
-      await Student.sync(syncOpts);
-    } catch (e) {
-      logger.warn("Student table sync alter failed, retrying standard sync:", e);
-      await Student.sync();
-    }
+    // Table creation only — see the comment in rundb() above for why we
+    // don't pass { alter: true } here.
+    await Grade.sync();
+    await Class.sync();
+    await Student.sync();
     const defaultGrades = ["primary", "preparatory", "secondary"];
     
     for (const name of defaultGrades) {
