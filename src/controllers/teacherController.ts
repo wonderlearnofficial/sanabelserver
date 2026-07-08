@@ -836,21 +836,34 @@ const addTeacher = async (req: Request, res: Response) => {
           const password = generateSixDigitPassword();
           const hashedPassword = bcrypt.hashSync(password, 10);
 
-          const user = await User.create({
-            firstName,
-            lastName,
-            email,
-            role: "Teacher",
-            password: hashedPassword,
-            dateOfBirth,
-            gender,
-            isAccess: true,
-            otpVerified: true,
-          });
+          // User + Teacher must be created together — otherwise a failure
+          // in Teacher.create after User.create already committed leaves an
+          // orphaned user (no teacher record, email permanently "taken").
+          let user!: User;
+          let new_teacher!: Teacher;
+          await User.sequelize!.transaction(async (t) => {
+            user = await User.create(
+              {
+                firstName,
+                lastName,
+                email,
+                role: "Teacher",
+                password: hashedPassword,
+                dateOfBirth,
+                gender,
+                isAccess: true,
+                otpVerified: true,
+              },
+              { transaction: t }
+            );
 
-          const new_teacher = await Teacher.create({
-            userId: user.id,
-            organizationId: organization.id,
+            new_teacher = await Teacher.create(
+              {
+                userId: user.id,
+                organizationId: organization.id,
+              },
+              { transaction: t }
+            );
           });
 
           worksheet.addRow({ email, password });

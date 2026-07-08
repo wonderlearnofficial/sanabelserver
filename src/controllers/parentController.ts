@@ -645,19 +645,29 @@ const addParent = async (req: Request, res: Response) => {
           const password = generateSixDigitPassword();
           const hashedPassword = bcrypt.hashSync(password, 10);
 
-          const user = await User.create({
-            firstName,
-            lastName,
-            email,
-            role: "Parent",
-            password: hashedPassword,
-            dateOfBirth: dateOfBirth || null,
-            gender: gender || null,
-            isAccess: true,
-            otpVerified: true,
-          });
+          // User + Parent must be created together — otherwise a failure in
+          // Parent.create after User.create already committed leaves an
+          // orphaned user (no parent record, email permanently "taken").
+          let user!: User;
+          let new_parent!: Parent;
+          await User.sequelize!.transaction(async (t) => {
+            user = await User.create(
+              {
+                firstName,
+                lastName,
+                email,
+                role: "Parent",
+                password: hashedPassword,
+                dateOfBirth: dateOfBirth || null,
+                gender: gender || null,
+                isAccess: true,
+                otpVerified: true,
+              },
+              { transaction: t }
+            );
 
-          const new_parent = await Parent.create({ userId: user.id });
+            new_parent = await Parent.create({ userId: user.id }, { transaction: t });
+          });
 
           let emailSent = false;
           try {

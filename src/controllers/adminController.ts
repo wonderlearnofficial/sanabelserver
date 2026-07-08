@@ -722,69 +722,86 @@ const createUser = async (req: Request, res: Response) => {
       resolvedClassId = targetClass.id;
     }
 
+    let resolvedGradeId: number | undefined;
+    let resolvedGradeName: string | undefined = grade;
+    if (role === "Student" && gradeId !== undefined && gradeId !== "" && gradeId !== null) {
+      const gradeRecord = await Grade.findByPk(Number(gradeId));
+      if (!gradeRecord) {
+        return res.status(400).json({ message: "Target grade does not exist" });
+      }
+      resolvedGradeId = gradeRecord.id;
+      resolvedGradeName = gradeRecord.name;
+    }
+
     const password = generatePassword();
     const hashedPassword = bcrypt.hashSync(password, 10);
 
-    const userRecord = await User.create({
-      firstName,
-      lastName: lastName || "",
-      email,
-      password: hashedPassword,
-      role,
-      isAccess: true,
-      otpVerified: true,
-    });
-
-    if (role === "Student") {
-      let resolvedGradeId: number | undefined;
-      let resolvedGradeName: string | undefined = grade;
-
-      if (gradeId !== undefined && gradeId !== "" && gradeId !== null) {
-        const gradeRecord = await Grade.findByPk(Number(gradeId));
-        if (!gradeRecord) {
-          return res.status(400).json({ message: "Target grade does not exist" });
-        }
-        resolvedGradeId = gradeRecord.id;
-        resolvedGradeName = gradeRecord.name;
-      }
-
-      const connectCode = await generateUniqueConnectCode();
-      const student = await Student.create({
-        userId: userRecord.id,
-        organizationId: resolvedOrganizationId,
-        classId: resolvedClassId,
-        gradeId: resolvedGradeId,
-        grade: resolvedGradeName || "",
-        treeProgress: 1,
-        connectCode,
-      });
-
-      const allChallenges = await Challenge.findAll();
-      await StudentChallenge.bulkCreate(
-        allChallenges.map((challenge) => ({
-          studentId: student.id,
-          challengeId: challenge.id,
-          completionStatus: "NotCompleted",
-        }))
+    // Every field the role-specific record needs is already validated above,
+    // so User + Student/Teacher/Parent are created together — otherwise a
+    // failure partway through (e.g. a bad treeProgress FK) after User.create
+    // already committed leaves an orphaned user with no role record and an
+    // email permanently "taken".
+    let userRecord!: User;
+    await User.sequelize!.transaction(async (t) => {
+      userRecord = await User.create(
+        {
+          firstName,
+          lastName: lastName || "",
+          email,
+          password: hashedPassword,
+          role,
+          isAccess: true,
+          otpVerified: true,
+        },
+        { transaction: t }
       );
-    } else if (role === "Teacher") {
-      const teacher = await Teacher.create({
-        userId: userRecord.id,
-        organizationId: resolvedOrganizationId,
-      });
 
-      // Assign classes to the teacher
-      if (req.body.classIds && Array.isArray(req.body.classIds)) {
-        for (const classId of req.body.classIds) {
-          const targetClass = await Class.findByPk(Number(classId));
-          if (targetClass && targetClass.organizationId === resolvedOrganizationId) {
-            await targetClass.update({ teacherId: teacher.id });
+      if (role === "Student") {
+        const connectCode = await generateUniqueConnectCode();
+        const student = await Student.create(
+          {
+            userId: userRecord.id,
+            organizationId: resolvedOrganizationId,
+            classId: resolvedClassId,
+            gradeId: resolvedGradeId,
+            grade: resolvedGradeName || "",
+            treeProgress: 1,
+            connectCode,
+          },
+          { transaction: t }
+        );
+
+        const allChallenges = await Challenge.findAll({ transaction: t });
+        await StudentChallenge.bulkCreate(
+          allChallenges.map((challenge) => ({
+            studentId: student.id,
+            challengeId: challenge.id,
+            completionStatus: "NotCompleted",
+          })),
+          { transaction: t }
+        );
+      } else if (role === "Teacher") {
+        const teacher = await Teacher.create(
+          {
+            userId: userRecord.id,
+            organizationId: resolvedOrganizationId,
+          },
+          { transaction: t }
+        );
+
+        // Assign classes to the teacher
+        if (req.body.classIds && Array.isArray(req.body.classIds)) {
+          for (const classId of req.body.classIds) {
+            const targetClass = await Class.findByPk(Number(classId), { transaction: t });
+            if (targetClass && targetClass.organizationId === resolvedOrganizationId) {
+              await targetClass.update({ teacherId: teacher.id }, { transaction: t });
+            }
           }
         }
+      } else if (role === "Parent") {
+        await Parent.create({ userId: userRecord.id }, { transaction: t });
       }
-    } else if (role === "Parent") {
-      await Parent.create({ userId: userRecord.id });
-    }
+    });
 
     return res.status(201).json({
       data: {

@@ -1338,26 +1338,40 @@ const addStudent = async (req: Request, res: Response) => {
           const hashedPassword = bcrypt.hashSync(password, 10);
           worksheet.addRow({ email, password });
 
-          const new_user = await User.create({
-            firstName,
-            lastName,
-            email,
-            role: "Student",
-            password: hashedPassword,
-            dateOfBirth: dateOfBirth || null,
-            gender: gender || null,
-            isAccess: true,
-            otpVerified: true,
-          });
+          // User + Student must be created together — if Student.create
+          // throws (e.g. a bad treeProgress FK) after User.create already
+          // committed, the user row is orphaned (no student record, but the
+          // email is permanently "taken" so the row can never be retried).
           const connectCode = await generateUniqueConnectCode();
-          const new_student = await Student.create({
-            connectCode,
-            treeProgress: 1,
-            gradeId: gradeRecord ? gradeRecord.id : null,
-            grade: gradeRecord ? gradeRecord.name : gradeName || null,
-            userId: new_user.id,
-            organizationId: organization.id,
-            classId: class_data.id,
+          let new_user!: User;
+          let new_student!: Student;
+          await User.sequelize!.transaction(async (t) => {
+            new_user = await User.create(
+              {
+                firstName,
+                lastName,
+                email,
+                role: "Student",
+                password: hashedPassword,
+                dateOfBirth: dateOfBirth || null,
+                gender: gender || null,
+                isAccess: true,
+                otpVerified: true,
+              },
+              { transaction: t }
+            );
+            new_student = await Student.create(
+              {
+                connectCode,
+                treeProgress: 1,
+                gradeId: gradeRecord ? gradeRecord.id : null,
+                grade: gradeRecord ? gradeRecord.name : gradeName || null,
+                userId: new_user.id,
+                organizationId: organization.id,
+                classId: class_data.id,
+              },
+              { transaction: t }
+            );
           });
 
           // ✅ Best-effort email — a delivery failure shouldn't undo (or

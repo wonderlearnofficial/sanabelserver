@@ -177,6 +177,24 @@ const seedGradesAndMigrate = async () => {
   }
 };
 
+// New students are created with treeProgress pointing at a default Tree row
+// (see studentController.addStudent). That row only ever existed via the
+// manual `node dist/index.js seed` CLI command (seedData(), below) — on any
+// environment where that was never run, the Trees table is empty and every
+// student creation fails with a foreign key violation. Seed it here instead
+// so it always exists, the same way seedGradesAndMigrate() guarantees the
+// default grades exist.
+const seedTrees = async () => {
+  try {
+    const count = await Tree.count();
+    if (count > 0) return;
+    await Tree.bulkCreate(demoTree.data || [], { ignoreDuplicates: true });
+    logger.info("✅ Default trees seeded");
+  } catch (error) {
+    logger.error("❌ Error seeding default trees:", { error });
+  }
+};
+
 const connectToDb = async (): Promise<void> => {
   try {
     await sequelize.authenticate();
@@ -188,6 +206,7 @@ const connectToDb = async (): Promise<void> => {
     // Ensure a working admin login always exists in this environment
     await seedAdmin();
     await seedGradesAndMigrate();
+    await seedTrees();
   } catch (error) {
     logger.error("❌ Database connection error:", { error });
   }
