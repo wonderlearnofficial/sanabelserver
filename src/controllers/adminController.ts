@@ -16,6 +16,7 @@ import Grade from "../models/grade.model";
 import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
 import Organization, { OrganizationType } from "../models/oraganization.model";
+import Tree from "../models/tree.model";
 import { QueryTypes } from "sequelize";
 import { generatePassword } from "../helpers/generatePassword";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
@@ -1383,6 +1384,321 @@ const deleteGrade = async (req: Request, res: Response) => {
   }
 };
 
+// ---------------------------------------------------------------------------
+// Scores & Gamification Data
+// ---------------------------------------------------------------------------
+
+const listScores = async (req: Request, res: Response) => {
+  try {
+    const {
+      search,
+      organizationId,
+      classId,
+      gradeId,
+      grade,
+      sortBy = "xp",
+      sortDir = "desc",
+      page = "1",
+      limit = "20",
+    } = req.query;
+
+    const where: any = {};
+    if (organizationId) where.organizationId = organizationId;
+    if (classId) where.classId = classId;
+    if (gradeId) where.gradeId = gradeId;
+    else if (grade) where.grade = grade;
+
+    const userWhere: any = {};
+    if (search) {
+      userWhere[Op.or] = [
+        { firstName: { [Op.like]: `%${String(search)}%` } },
+        { lastName: { [Op.like]: `%${String(search)}%` } },
+        { email: { [Op.like]: `%${String(search)}%` } },
+      ];
+    }
+
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 20;
+    const offset = (pageNum - 1) * limitNum;
+
+    const dir = String(sortDir).toUpperCase() === "ASC" ? "ASC" : "DESC";
+    let order: any[] = [];
+
+    switch (String(sortBy)) {
+      case "level":
+        order = [["level", dir], ["xp", "DESC"]];
+        break;
+      case "medal":
+        order = [["medal", dir], ["xp", "DESC"]];
+        break;
+      case "snabelYellow":
+        order = [["snabelYellow", dir]];
+        break;
+      case "snabelBlue":
+        order = [["snabelBlue", dir]];
+        break;
+      case "snabelRed":
+        order = [["snabelRed", dir]];
+        break;
+      case "treeProgress":
+        order = [["treeProgress", dir]];
+        break;
+      case "totalSanabel":
+        order = [["snabelYellow", dir], ["snabelBlue", dir], ["snabelRed", dir]];
+        break;
+      case "name":
+        order = [[{ model: User, as: "user" }, "firstName", dir]];
+        break;
+      case "xp":
+      default:
+        order = [["xp", dir]];
+        break;
+    }
+
+    const { rows, count } = await Student.findAndCountAll({
+      where,
+      limit: limitNum,
+      offset,
+      order,
+      distinct: true,
+      include: [
+        {
+          model: User,
+          as: "user",
+          attributes: ["firstName", "lastName", "email", "profileImg", "gender", "dateOfBirth"],
+          where: Object.keys(userWhere).length ? userWhere : undefined,
+          required: !!search,
+        },
+        {
+          model: Class,
+          as: "Class",
+          attributes: ["id", "classname", "grade", "gradeId"],
+          required: false,
+          include: [
+            {
+              model: Grade,
+              as: "GradeEntity",
+              attributes: ["id", "name"],
+              required: false,
+            },
+          ],
+        },
+        {
+          model: Grade,
+          as: "GradeEntity",
+          attributes: ["id", "name"],
+          required: false,
+        },
+        {
+          model: Organization,
+          as: "organization",
+          attributes: ["id", "name"],
+          required: false,
+        },
+        {
+          model: Tree,
+          as: "Tree",
+          attributes: ["id", "stage", "level", "treeProgress"],
+          required: false,
+        },
+      ],
+    });
+
+    const allStudents = await Student.findAll({
+      attributes: ["xp", "snabelYellow", "snabelBlue", "snabelRed", "level"],
+      raw: true,
+    });
+
+    let totalXp = 0;
+    let totalSanabel = 0;
+    let maxLevel = 0;
+    let playingStudents = 0;
+
+    for (const s of allStudents) {
+      const xpVal = Number(s.xp || 0);
+      const yellow = Number(s.snabelYellow || 0);
+      const blue = Number(s.snabelBlue || 0);
+      const red = Number(s.snabelRed || 0);
+      const lvl = Number(s.level || 1);
+
+      totalXp += xpVal;
+      totalSanabel += yellow + blue + red;
+      if (lvl > maxLevel) maxLevel = lvl;
+      if (xpVal > 0 || yellow > 0 || blue > 0 || red > 0 || lvl > 1) {
+        playingStudents++;
+      }
+    }
+
+    return res.status(200).json({
+      data: rows,
+      total: count,
+      page: pageNum,
+      limit: limitNum,
+      stats: {
+        totalStudents: count,
+        playingStudents,
+        totalXp,
+        totalSanabel,
+        maxLevel,
+      },
+    });
+  } catch (error) {
+    logger.error("Error in listScores:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Task Completion History Log
+// ---------------------------------------------------------------------------
+
+const listTaskHistory = async (req: Request, res: Response) => {
+  try {
+    const {
+      search,
+      organizationId,
+      classId,
+      gradeId,
+      date,
+      page = "1",
+      limit = "20",
+    } = req.query;
+
+    const pageNum = Number(page) || 1;
+    const limitNum = Number(limit) || 20;
+    const offset = (pageNum - 1) * limitNum;
+
+    const studentWhere: any = {};
+    if (organizationId) studentWhere.organizationId = organizationId;
+    if (classId) studentWhere.classId = classId;
+    if (gradeId) studentWhere.gradeId = gradeId;
+
+    const taskHistoryWhere: any = {
+      completionStatus: "Completed",
+    };
+    if (date) {
+      taskHistoryWhere.date = date;
+    }
+
+    const { rows, count } = await StudentTask.findAndCountAll({
+      where: taskHistoryWhere,
+      limit: limitNum,
+      offset,
+      order: [["updatedAt", "DESC"], ["id", "DESC"]],
+      distinct: true,
+      include: [
+        {
+          model: Student,
+          as: "Student",
+          where: Object.keys(studentWhere).length ? studentWhere : undefined,
+          required: true,
+          include: [
+            {
+              model: User,
+              as: "user",
+              attributes: ["firstName", "lastName", "email", "profileImg"],
+              required: false,
+            },
+            {
+              model: Class,
+              as: "Class",
+              attributes: ["id", "classname", "grade"],
+              required: false,
+            },
+            {
+              model: Grade,
+              as: "GradeEntity",
+              attributes: ["id", "name"],
+              required: false,
+            },
+            {
+              model: Organization,
+              as: "organization",
+              attributes: ["id", "name"],
+              required: false,
+            },
+          ],
+        },
+        {
+          model: Task,
+          as: "Task",
+          attributes: ["id", "title", "description", "type", "xp", "snabelRed", "snabelBlue", "snabelYellow"],
+          required: false,
+          include: [
+            {
+              model: TaskCategory,
+              as: "category",
+              attributes: ["id", "title"],
+              required: false,
+            },
+          ],
+        },
+        {
+          model: Parent,
+          as: "Parent",
+          required: false,
+          include: [
+            {
+              model: User,
+              as: "User",
+              attributes: ["firstName", "lastName", "email"],
+              required: false,
+            },
+          ],
+        },
+        {
+          model: Teacher,
+          as: "Teacher",
+          required: false,
+          include: [
+            {
+              model: User,
+              as: "User",
+              attributes: ["firstName", "lastName", "email"],
+              required: false,
+            },
+          ],
+        },
+      ],
+    });
+
+    // Filter by search text if provided (student name, email, task title)
+    let filteredRows = rows;
+    if (search && typeof search === "string" && search.trim() !== "") {
+      const q = search.trim().toLowerCase();
+      filteredRows = rows.filter((item: any) => {
+        const studentUser = item.Student?.user;
+        const sName = `${studentUser?.firstName || ""} ${studentUser?.lastName || ""}`.toLowerCase();
+        const sEmail = (studentUser?.email || "").toLowerCase();
+        const taskTitle = (item.Task?.title || "").toLowerCase();
+        return sName.includes(q) || sEmail.includes(q) || taskTitle.includes(q);
+      });
+    }
+
+    const todayStr = new Date().toISOString().split("T")[0];
+    const completedToday = await StudentTask.count({
+      where: {
+        completionStatus: "Completed",
+        date: todayStr,
+      },
+    });
+
+    return res.status(200).json({
+      data: filteredRows,
+      total: search ? filteredRows.length : count,
+      page: pageNum,
+      limit: limitNum,
+      stats: {
+        totalCompleted: count,
+        completedToday,
+      },
+    });
+  } catch (error) {
+    logger.error("Error in listTaskHistory:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 export {
   getAdminProfile,
   listOrganizations,
@@ -1410,4 +1726,7 @@ export {
   updateGrade,
   deleteGrade,
   importGrades,
+  listScores,
+  listTaskHistory,
 };
+

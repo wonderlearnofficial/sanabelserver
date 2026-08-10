@@ -241,3 +241,26 @@ router.post(
   processStudentMiddleware,
   adminController.importGrades
 );
+
+/**
+ * @swagger
+ * /admin/scores:
+ *   get:
+ *     summary: Get student scores and gamification progress system-wide
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get("/scores", authenticateToken, checkAdmin, adminController.listScores);
+
+/**
+ * @swagger
+ * /admin/history:
+ *   get:
+ *     summary: Get recent completed tasks history system-wide
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get("/history", authenticateToken, checkAdmin, adminController.listTaskHistory);
+
