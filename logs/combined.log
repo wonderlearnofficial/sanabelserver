@@ -75563,3 +75563,8 @@
 {"duration":2,"level":"info","message":"<-- GET /mission/myRequestStatus?taskId=5&missionDate=2026-07-13 304 2ms","method":"GET","status":304,"timestamp":"2026-07-13T12:10:12.923Z","url":"/mission/myRequestStatus?taskId=5&missionDate=2026-07-13"}
 {"duration":3,"level":"info","message":"<-- GET /mission/myRequestStatus?taskId=7&missionDate=2026-07-13 304 3ms","method":"GET","status":304,"timestamp":"2026-07-13T12:10:12.924Z","url":"/mission/myRequestStatus?taskId=7&missionDate=2026-07-13"}
 {"duration":1,"level":"info","message":"<-- GET /mission/myRequestStatus?taskId=6&missionDate=2026-07-13 304 1ms","method":"GET","status":304,"timestamp":"2026-07-13T12:10:12.924Z","url":"/mission/myRequestStatus?taskId=6&missionDate=2026-07-13"}
+{"driver":"mysql","level":"info","message":"Using Database Driver:","timestamp":"2026-08-10T18:45:10.300Z"}
+{"level":"info","message":"Server is running on http://localhost:5000","timestamp":"2026-08-10T18:45:14.404Z"}
+{"level":"info","message":"Swagger docs available at http://localhost:5000/api-docs","timestamp":"2026-08-10T18:45:14.405Z"}
+{"error":{"name":"SequelizeConnectionRefusedError"},"level":"error","message":"❌ Database connection error:","timestamp":"2026-08-10T18:45:14.422Z"}
+{"level":"warn","message":"VAPID keys are missing. Push notifications will not work.","timestamp":"2026-08-10T18:45:14.423Z"}
