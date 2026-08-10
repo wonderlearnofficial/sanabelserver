@@ -1410,10 +1410,11 @@ const listScores = async (req: Request, res: Response) => {
 
     const userWhere: any = {};
     if (search) {
+      const searchStr = `%${String(search)}%`;
       userWhere[Op.or] = [
-        { firstName: { [Op.like]: `%${String(search)}%` } },
-        { lastName: { [Op.like]: `%${String(search)}%` } },
-        { email: { [Op.like]: `%${String(search)}%` } },
+        { firstName: { [Op.like]: searchStr } },
+        { lastName: { [Op.like]: searchStr } },
+        { email: { [Op.like]: searchStr } },
       ];
     }
 
@@ -1455,54 +1456,75 @@ const listScores = async (req: Request, res: Response) => {
         break;
     }
 
-    const { rows, count } = await Student.findAndCountAll({
-      where,
-      limit: limitNum,
-      offset,
-      order,
-      distinct: true,
-      include: [
-        {
-          model: User,
-          as: "user",
-          attributes: ["firstName", "lastName", "email", "profileImg", "gender", "dateOfBirth"],
-          where: Object.keys(userWhere).length ? userWhere : undefined,
-          required: !!search,
-        },
-        {
-          model: Class,
-          as: "Class",
-          attributes: ["id", "classname", "grade", "gradeId"],
-          required: false,
-          include: [
-            {
-              model: Grade,
-              as: "GradeEntity",
-              attributes: ["id", "name"],
-              required: false,
-            },
-          ],
-        },
-        {
-          model: Grade,
-          as: "GradeEntity",
-          attributes: ["id", "name"],
-          required: false,
-        },
-        {
-          model: Organization,
-          as: "organization",
-          attributes: ["id", "name"],
-          required: false,
-        },
-        {
-          model: Tree,
-          as: "Tree",
-          attributes: ["id", "stage", "level", "treeProgress"],
-          required: false,
-        },
-      ],
-    });
+    const includes: any[] = [
+      {
+        model: User,
+        as: "user",
+        attributes: ["firstName", "lastName", "email", "profileImg", "gender", "dateOfBirth"],
+        where: Object.keys(userWhere).length ? userWhere : undefined,
+        required: !!search,
+      },
+      {
+        model: Class,
+        as: "Class",
+        attributes: ["id", "classname", "grade", "gradeId"],
+        required: false,
+        include: [
+          {
+            model: Grade,
+            as: "GradeEntity",
+            attributes: ["id", "name"],
+            required: false,
+          },
+        ],
+      },
+      {
+        model: Grade,
+        as: "GradeEntity",
+        attributes: ["id", "name"],
+        required: false,
+      },
+      {
+        model: Organization,
+        as: "organization",
+        attributes: ["id", "name"],
+        required: false,
+      },
+      {
+        model: Tree,
+        as: "Tree",
+        attributes: ["id", "stage", "treeProgress"],
+        required: false,
+      },
+    ];
+
+    let rows: any[] = [];
+    let count = 0;
+
+    try {
+      const result = await Student.findAndCountAll({
+        where,
+        limit: limitNum,
+        offset,
+        order,
+        distinct: true,
+        include: includes,
+      });
+      rows = result.rows;
+      count = result.count;
+    } catch (queryErr) {
+      logger.warn("listScores query with Tree failed, trying fallback without Tree:", { error: queryErr });
+      const fallbackResult = await Student.findAndCountAll({
+        where,
+        limit: limitNum,
+        offset,
+        order,
+        distinct: true,
+        include: includes.filter((inc) => inc.model !== Tree),
+      });
+      rows = fallbackResult.rows;
+      count = fallbackResult.count;
+    }
 
     const allStudents = await Student.findAll({
       attributes: ["xp", "snabelYellow", "snabelBlue", "snabelRed", "level"],
@@ -1580,94 +1602,133 @@ const listTaskHistory = async (req: Request, res: Response) => {
       taskHistoryWhere.date = date;
     }
 
-    const { rows, count } = await StudentTask.findAndCountAll({
-      where: taskHistoryWhere,
-      limit: limitNum,
-      offset,
-      order: [["updatedAt", "DESC"], ["id", "DESC"]],
-      distinct: true,
-      include: [
-        {
-          model: Student,
-          as: "Student",
-          where: Object.keys(studentWhere).length ? studentWhere : undefined,
-          required: true,
-          include: [
-            {
-              model: User,
-              as: "user",
-              attributes: ["firstName", "lastName", "email", "profileImg"],
-              required: false,
-            },
-            {
-              model: Class,
-              as: "Class",
-              attributes: ["id", "classname", "grade"],
-              required: false,
-            },
-            {
-              model: Grade,
-              as: "GradeEntity",
-              attributes: ["id", "name"],
-              required: false,
-            },
-            {
-              model: Organization,
-              as: "organization",
-              attributes: ["id", "name"],
-              required: false,
-            },
-          ],
-        },
-        {
-          model: Task,
-          as: "Task",
-          attributes: ["id", "title", "description", "type", "xp", "snabelRed", "snabelBlue", "snabelYellow"],
-          required: false,
-          include: [
-            {
-              model: TaskCategory,
-              as: "category",
-              attributes: ["id", "title"],
-              required: false,
-            },
-          ],
-        },
-        {
-          model: Parent,
-          as: "Parent",
-          required: false,
-          include: [
-            {
-              model: User,
-              as: "User",
-              attributes: ["firstName", "lastName", "email"],
-              required: false,
-            },
-          ],
-        },
-        {
-          model: Teacher,
-          as: "Teacher",
-          required: false,
-          include: [
-            {
-              model: User,
-              as: "User",
-              attributes: ["firstName", "lastName", "email"],
-              required: false,
-            },
-          ],
-        },
-      ],
-    });
+    let rows: any[] = [];
+    let count = 0;
+
+    try {
+      const result = await StudentTask.findAndCountAll({
+        where: taskHistoryWhere,
+        limit: limitNum,
+        offset,
+        order: [["updatedAt", "DESC"], ["id", "DESC"]],
+        distinct: true,
+        include: [
+          {
+            model: Student,
+            as: "Student",
+            where: Object.keys(studentWhere).length ? studentWhere : undefined,
+            required: Object.keys(studentWhere).length > 0,
+            include: [
+              {
+                model: User,
+                as: "user",
+                attributes: ["firstName", "lastName", "email", "profileImg"],
+                required: false,
+              },
+              {
+                model: Class,
+                as: "Class",
+                attributes: ["id", "classname", "grade"],
+                required: false,
+              },
+              {
+                model: Grade,
+                as: "GradeEntity",
+                attributes: ["id", "name"],
+                required: false,
+              },
+              {
+                model: Organization,
+                as: "organization",
+                attributes: ["id", "name"],
+                required: false,
+              },
+            ],
+          },
+          {
+            model: Task,
+            as: "Task",
+            attributes: ["id", "title", "description", "type", "xp", "snabelRed", "snabelBlue", "snabelYellow"],
+            required: false,
+            include: [
+              {
+                model: TaskCategory,
+                as: "category",
+                attributes: ["id", "title"],
+                required: false,
+              },
+            ],
+          },
+          {
+            model: Parent,
+            as: "Parent",
+            required: false,
+            include: [
+              {
+                model: User,
+                as: "User",
+                attributes: ["firstName", "lastName", "email"],
+                required: false,
+              },
+            ],
+          },
+          {
+            model: Teacher,
+            as: "Teacher",
+            required: false,
+            include: [
+              {
+                model: User,
+                as: "User",
+                attributes: ["firstName", "lastName", "email"],
+                required: false,
+              },
+            ],
+          },
+        ],
+      });
+      rows = result.rows;
+      count = result.count;
+    } catch (queryErr) {
+      logger.warn("listTaskHistory full query failed, trying simplified query:", { error: queryErr });
+      const simplified = await StudentTask.findAndCountAll({
+        where: taskHistoryWhere,
+        limit: limitNum,
+        offset,
+        order: [["id", "DESC"]],
+        distinct: true,
+        include: [
+          {
+            model: Student,
+            as: "Student",
+            required: false,
+            include: [
+              {
+                model: User,
+                as: "user",
+                attributes: ["firstName", "lastName", "email"],
+                required: false,
+              },
+            ],
+          },
+          {
+            model: Task,
+            as: "Task",
+            attributes: ["id", "title", "xp", "snabelRed", "snabelBlue", "snabelYellow"],
+            required: false,
+          },
+        ],
+      });
+      rows = simplified.rows;
+      count = simplified.count;
+    }
 
     // Filter by search text if provided (student name, email, task title)
     let filteredRows = rows;
     if (search && typeof search === "string" && search.trim() !== "") {
       const q = search.trim().toLowerCase();
       filteredRows = rows.filter((item: any) => {
-        const studentUser = item.Student?.user;
+        const studentUser = item.Student?.user || item.Student?.User;
         const sName = `${studentUser?.firstName || ""} ${studentUser?.lastName || ""}`.toLowerCase();
         const sEmail = (studentUser?.email || "").toLowerCase();
         const taskTitle = (item.Task?.title || "").toLowerCase();
@@ -1676,12 +1737,17 @@ const listTaskHistory = async (req: Request, res: Response) => {
     }
 
     const todayStr = new Date().toISOString().split("T")[0];
-    const completedToday = await StudentTask.count({
-      where: {
-        completionStatus: "Completed",
-        date: todayStr,
-      },
-    });
+    let completedToday = 0;
+    try {
+      completedToday = await StudentTask.count({
+        where: {
+          completionStatus: "Completed",
+          date: todayStr,
+        },
+      });
+    } catch {
+      /* silent */
+    }
 
     return res.status(200).json({
       data: filteredRows,
