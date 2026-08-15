@@ -332,6 +332,15 @@ router.patch("/update-passowrd", authenticateToken, updatePassword);
 router.post("/refresh", userController.refreshAccessToken);
 
 /**
+ * Lightweight authenticated heartbeat. The authentication middleware checks
+ * the database, so a deleted account receives ACCOUNT_DELETED here even when
+ * the user is otherwise idle on a page.
+ */
+router.get("/session", authenticateToken, (_req, res) => {
+  res.status(204).send();
+});
+
+/**
  * @swagger
  * /users/logout:
  *   post:

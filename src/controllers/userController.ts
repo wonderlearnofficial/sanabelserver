@@ -490,9 +490,11 @@ const refreshAccessToken = async (req: Request, res: Response) => {
 
     const user = await User.findByPk(payload.id);
     if (!user) {
-      return res
-        .status(403)
-        .json({ status: 403, message: "Invalid refresh token" });
+      return res.status(401).json({
+        status: 401,
+        code: "ACCOUNT_DELETED",
+        message: "Account no longer exists",
+      });
     }
 
     // A logout (tokenVersion bump) invalidates every previously issued refresh token.
