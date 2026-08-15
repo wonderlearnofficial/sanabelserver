@@ -184,6 +184,60 @@ const seedGradesAndMigrate = async () => {
   }
 };
 
+// Task categories and their built-in missions are application catalog data,
+// not demo/user data. A database with empty catalog tables makes mission
+// selection blank and category totals incomplete, so repair missing rows on
+// every startup without overwriting existing/customized missions.
+const seedCoreTaskCatalog = async () => {
+  try {
+    const seedCategories: any[] = taskCategorySeed.data || [];
+    const seedTasks: any[] = demoTaskSeeder.data || [];
+
+    await sequelize.transaction(async (transaction) => {
+      for (const category of seedCategories) {
+        await TaskCategory.upsert(
+          {
+            id: category.id,
+            title: category.title,
+            description: category.description,
+            xp: category.xp,
+            snabelRed: category.snabelRed,
+            snabelYellow: category.snabelYellow,
+            snabelBlue: category.snabelBlue,
+          },
+          { transaction },
+        );
+      }
+
+      const seedTaskIds = seedTasks.map((task) => task.id);
+      const existingTasks = await Task.findAll({
+        attributes: ["id"],
+        where: { id: seedTaskIds },
+        transaction,
+      });
+      const existingTaskIds = new Set(existingTasks.map((task) => task.id));
+      const missingTasks = seedTasks.filter(
+        (task) => !existingTaskIds.has(task.id),
+      );
+
+      if (missingTasks.length > 0) {
+        await Task.bulkCreate(missingTasks, {
+          ignoreDuplicates: true,
+          transaction,
+        });
+      }
+
+      logger.info("Core mission catalog verified", {
+        categories: seedCategories.length,
+        insertedMissions: missingTasks.length,
+      });
+    });
+  } catch (error) {
+    logger.error("Error verifying core mission catalog", { error });
+    throw error;
+  }
+};
+
 // New students are created with treeProgress pointing at a default Tree row
 // (see studentController.addStudent). That row only ever existed via the
 // manual `node dist/index.js seed` CLI command (seedData(), below) — on any
@@ -216,6 +270,7 @@ const connectToDb = async (): Promise<void> => {
 
     // Ensure a working admin login always exists in this environment
     await seedAdmin();
+    await seedCoreTaskCatalog();
     await seedGradesAndMigrate();
     await seedTrees();
   } catch (error) {

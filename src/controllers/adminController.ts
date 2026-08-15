@@ -25,6 +25,7 @@ import {
   InvalidOptionalIdError,
   parseOptionalPositiveId,
 } from "../helpers/optionalId";
+import { buildCategoryCounts } from "../helpers/taskCategoryStats";
 
 const DEFAULT_RESET_PASSWORD = "changeme123";
 
@@ -384,10 +385,10 @@ const getStudentDetail = async (req: Request, res: Response) => {
       {} as Record<string, number>
     );
 
-    const finalCategoryCounts = allCategories.reduce((acc, category) => {
-      acc[category.title] = categoryCounts[category.title] || 0;
-      return acc;
-    }, {} as Record<string, number>);
+    const finalCategoryCounts = buildCategoryCounts(
+      allCategories.map((category) => category.title),
+      categoryCounts,
+    );
 
     const totalCompletedTasks = (
       Object.values(finalCategoryCounts) as number[]

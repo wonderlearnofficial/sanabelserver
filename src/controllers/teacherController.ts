@@ -26,6 +26,7 @@ import { sendEmail } from "../helpers/sendEmail";
 import { buildAccountCreatedEmail, LOGO_ATTACHMENTS, getAppUrl } from "../helpers/emailTemplates";
 import { generatePassword, generateSixDigitPassword } from "../helpers/generatePassword";
 import { getImportField } from "../helpers/importFieldLookup";
+import { buildCategoryCounts } from "../helpers/taskCategoryStats";
 
 declare global {
   namespace Express {
@@ -675,10 +676,10 @@ const appearStudentInDetails = async (req: Request, res: Response) => {
         }, {} as Record<string, number>);
     
         // Ensure all unique categories appear in the final response (even if count is 0)
-        const finalCategoryCounts = allCategories.reduce((acc, category) => {
-          acc[category.title] = categoryCounts[category.title] || 0;
-          return acc;
-        }, {} as Record<string, number>);
+        const finalCategoryCounts = buildCategoryCounts(
+          allCategories.map((category) => category.title),
+          categoryCounts,
+        );
     
         // Calculate total completed tasks
         const totalCompletedTasks = (Object.values(finalCategoryCounts) as number[]).reduce(

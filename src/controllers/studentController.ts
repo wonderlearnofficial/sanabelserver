@@ -26,6 +26,7 @@ import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
 import { getImportField } from "../helpers/importFieldLookup";
+import { buildCategoryCounts } from "../helpers/taskCategoryStats";
 
 declare global {
   namespace Express {
@@ -343,11 +344,11 @@ const appearTaskesCategory = async (req: Request, res: Response) => {
         .status(404)
         .json({ message: "Student data not found in request" });
     }
-    const cateogrydata = await TaskCategory.findAll();
-    if (!cateogrydata) {
+    const cateogrydata = await TaskCategory.findAll({ order: [["id", "ASC"]] });
+    if (cateogrydata.length === 0) {
       return res
-        .status(404)
-        .json({ message: "Category data not found in request" });
+        .status(503)
+        .json({ message: "Mission catalog is temporarily unavailable" });
     }
 
     return res.status(200).json({ data: cateogrydata });
@@ -784,10 +785,10 @@ const calculateCompletedTasksByCategory = async (
     );
 
     // Ensure all unique categories appear in the final response (even if count is 0)
-    const finalCategoryCounts = allCategories.reduce((acc, category) => {
-      acc[category.title] = categoryCounts[category.title] || 0;
-      return acc;
-    }, {} as Record<string, number>);
+    const finalCategoryCounts = buildCategoryCounts(
+      allCategories.map((category) => category.title),
+      categoryCounts,
+    );
 
     // Calculate total completed tasks
     const totalCompletedTasks = (
