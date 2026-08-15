@@ -3,9 +3,13 @@
 // env-sourced TTL strings.
 const jwt = require("jsonwebtoken");
 
-// Short-lived access token; longer-lived refresh token. Both are env-tunable.
+// Short-lived access token; long-lived, rolling refresh token. Both are env-tunable.
 const ACCESS_TTL = process.env.ACCESS_TOKEN_TTL || "30m";
-const REFRESH_TTL = process.env.REFRESH_TOKEN_TTL || "7d";
+// The refresh endpoint issues a replacement refresh token on every successful
+// renewal, so an active user can remain signed in without weakening the short
+// access-token lifetime. A user who is inactive for a full year must sign in
+// again.
+const REFRESH_TTL = process.env.REFRESH_TOKEN_TTL || "365d";
 
 function accessSecret(): string {
   const secret = process.env.JWT_SECRET;

@@ -502,13 +502,23 @@ const refreshAccessToken = async (req: Request, res: Response) => {
         .json({ status: 403, message: "Refresh token revoked" });
     }
 
-    const token = signAccessToken({
+    const tokenUser = {
       id: user.id,
       email: user.email,
       role: user.role,
-    });
+      tokenVersion: user.tokenVersion,
+    };
+    const token = signAccessToken(tokenUser);
+    // Rotate the refresh token on every renewal. This gives active sessions a
+    // sliding lifetime while logout can still revoke the entire token family
+    // through tokenVersion.
+    const nextRefreshToken = signRefreshToken(tokenUser);
 
-    return res.status(200).json({ status: 200, data: { token } });
+    res.setHeader("Cache-Control", "no-store");
+    return res.status(200).json({
+      status: 200,
+      data: { token, refreshToken: nextRefreshToken },
+    });
   } catch (error) {
     logger.error("Refresh token error:", { error });
     return res

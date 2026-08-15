@@ -29,7 +29,11 @@ const authenticateToken = (req: Request, res: Response, next: NextFunction) => {
           .status(401)
           .json({ status: 401, code: "TOKEN_EXPIRED", message: "Token expired" });
       }
-      return res.status(403).json({ status: 403, message: "Token is invalid" });
+      return res.status(403).json({
+        status: 403,
+        code: "TOKEN_INVALID",
+        message: "Token is invalid",
+      });
     }
 
     // Use a type assertion to extend req locally with a `user` property
