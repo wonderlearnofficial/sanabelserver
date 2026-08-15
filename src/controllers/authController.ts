@@ -2,7 +2,10 @@ import { Request, Response, NextFunction } from "express";
 import User from "../models/user.model";
 import logger from "../config/logger";
 
-import generateOTP from "../helpers/generateOtp";
+import generateOTP, {
+  isValidOTP,
+  OTP_LENGTH,
+} from "../helpers/generateOtp";
 import { EmailDeliveryError, sendEmail } from "../helpers/sendEmail";
 import { buildOtpEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
 import {
@@ -118,10 +121,10 @@ const verifyOTP = async (req: Request, res: Response) => {
     : "";
   const otp = String(req.body.otp || "").trim();
 
-  if (!email || !/^\d{6}$/.test(otp)) {
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !isValidOTP(otp)) {
     return res.status(400).json({
       status: 400,
-      message: "A valid email and six-digit OTP are required",
+      message: `A valid email and ${OTP_LENGTH}-digit OTP are required`,
     });
   }
 

@@ -10,7 +10,10 @@ import Class from "../models/class.model";
 import Grade from "../models/grade.model";
 import Organization from "../models/oraganization.model";
 import bcrypt from "bcryptjs";
-import generateOTP from "../helpers/generateOtp";
+import generateOTP, {
+  isValidOTP,
+  OTP_LENGTH,
+} from "../helpers/generateOtp";
 import { sendEmail } from "../helpers/sendEmail";
 import StudentTask from "../models/student-task.model"; // Import the StudentTask model
 import Task from "../models/task.model"; // Import the Task model
@@ -321,7 +324,17 @@ const sendOTP = async (req: Request, res: Response) => {
 };
 
 const verifyOTP = async (req: Request, res: Response) => {
-  const { email, otp } = req.body;
+  const email = typeof req.body.email === "string"
+    ? req.body.email.trim().toLowerCase()
+    : "";
+  const otp = String(req.body.otp || "").trim();
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || !isValidOTP(otp)) {
+    return res.status(400).json({
+      status: 400,
+      message: `A valid email and ${OTP_LENGTH}-digit OTP are required`,
+    });
+  }
 
   try {
     // Find user by email
