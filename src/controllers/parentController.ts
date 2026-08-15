@@ -126,7 +126,10 @@ const searchStuentByCode = async (req: Request, res: Response) => {
             return res.status(404).json({ message: "Parent not found" });
         }
 
-        const { code } = req.params;
+        const code = String(req.params.code || "").trim();
+        if (!code) {
+            return res.status(400).json({ message: "Student connection code is required" });
+        }
         const student = await Student.findOne({
             where: {connectCode: code },
             include:[{
@@ -137,6 +140,9 @@ const searchStuentByCode = async (req: Request, res: Response) => {
         }
         
     );
+        if (!student) {
+            return res.status(404).json({ message: "Student not found" });
+        }
         return res.status(200).json({ data: student });
     } catch (error) {
         logger.error("Error searching student by code (parent):", { error });
@@ -157,7 +163,10 @@ const connectStudentToParent = async (req: Request, res: Response) => {
             return res.status(404).json({ message: "Parent not found" });
         }
 
-        const { code } = req.body;
+        const code = typeof req.body.code === "string" ? req.body.code.trim() : "";
+        if (!code) {
+            return res.status(400).json({ message: "Student connection code is required" });
+        }
         const student = await Student.findOne({
             where: {connectCode: code },
             include:[{
@@ -169,6 +178,15 @@ const connectStudentToParent = async (req: Request, res: Response) => {
         if (!student) {
             return res.status(404).json({ message: "Student not found" });
         }
+
+        if (student.ParentId === parent.id) {
+            return res.status(200).json({ message: "Student is already connected to this parent" });
+        }
+
+        if (student.ParentId != null) {
+            return res.status(409).json({ message: "Student is already connected to another parent" });
+        }
+
         await student.update({ ParentId: parent.id });
          
         return res.status(200).json({ message: "Student connected to parent successfully" });
@@ -191,7 +209,7 @@ const appearStudentbyparent = async (req: Request, res: Response) => {
             return res.status(404).json({ message: "Parent not found" });
         }
         const student = await Student.findAll({
-            where: {parentId: parent.id },
+            where: {ParentId: parent.id },
             include: [{
               model: User,
               as: "user", // use the alias defined in the association

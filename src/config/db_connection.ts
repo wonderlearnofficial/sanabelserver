@@ -37,7 +37,7 @@ logger.debug(
   "Database configuration initiated",
   {
     database: process.env.MYSQL_DB_NAME,
-    user: process.env.MYSQL_DB_USER,
+    dbUser: process.env.MYSQL_DB_USER,
     host: process.env.MYSQL_DB_HOST,
     port: process.env.MYSQL_DB_PORT,
   }
@@ -45,6 +45,7 @@ logger.debug(
 
 
 let sequelize: Sequelize;
+let modelsInitialized = false;
 
 if (process.env.DB_DRIVER === "mariadb")
   sequelize = new Sequelize({
@@ -89,21 +90,29 @@ const rundb = async () => {
     Tree,
     MissionApprovalRequest,
   };
-  Object.values(models).forEach((model) => {
-    model.initModel(sequelize);
-  });
+  if (!modelsInitialized) {
+    Object.values(models).forEach((model) => {
+      model.initModel(sequelize);
+    });
 
-  // Instead of assigning to sequelize.models (readonly), keep your own:
-  const registeredModels = { ...models };
+    // Instead of assigning to sequelize.models (readonly), keep your own:
+    const registeredModels = { ...models };
 
-  // Call associate with registeredModels
-  Object.values(registeredModels).forEach((model) => {
-    if (typeof model.associate === "function") {
-      model.associate(registeredModels);
-    }
-  });
+    // Call associate with registeredModels
+    Object.values(registeredModels).forEach((model) => {
+      if (typeof model.associate === "function") {
+        model.associate(registeredModels);
+      }
+    });
+    modelsInitialized = true;
+  }
 
-  try {
+  const shouldSyncSchema =
+    process.env.DB_SYNC_ON_STARTUP === "true" ||
+    (process.env.NODE_ENV !== "production" &&
+      process.env.DB_SYNC_ON_STARTUP !== "false");
+
+  if (shouldSyncSchema) {
     // We never auto-ALTER the live schema here — on this Sequelize version,
     // `sync({ alter: true })` re-adds a foreign key constraint for every
     // association on *every* boot instead of detecting the one already
@@ -114,30 +123,27 @@ const rundb = async () => {
     // server/database/migrations).
     await sequelize.sync();
     logger.info("Database & models synced", { alter: false });
-  } catch (error) {
-    logger.error("Unable to sync database schema:", { error });
+  } else {
+    logger.info("Automatic schema sync disabled; using migrations only");
   }
-
 };
 
 const seedGradesAndMigrate = async () => {
   try {
     logger.info("🔍 Seeding and migrating grades...");
-    // Table creation only — see the comment in rundb() above for why we
-    // don't pass { alter: true } here.
-    await Grade.sync();
-    await Class.sync();
-    await Student.sync();
     const defaultGrades = ["primary", "preparatory", "secondary"];
     
     for (const name of defaultGrades) {
       await Grade.findOrCreate({
-        where: { name },
-        defaults: { name }
+        where: { name, organizationId: null },
+        defaults: { name, organizationId: null },
       });
     }
 
-    const grades = await Grade.findAll();
+    // Legacy text grades migrate only to the shared/global defaults. Using an
+    // organization-specific grade here could attach a student or class to a
+    // grade owned by a different school.
+    const grades = await Grade.findAll({ where: { organizationId: null } });
     const gradeMap = new Map<string, number>();
     grades.forEach(g => {
       gradeMap.set(g.name.toLowerCase(), g.id);
@@ -174,6 +180,7 @@ const seedGradesAndMigrate = async () => {
     logger.info("✅ Grades seeded and migrated successfully!");
   } catch (error) {
     logger.error("❌ Error seeding and migrating grades:", { error });
+    throw error;
   }
 };
 
@@ -186,12 +193,16 @@ const seedGradesAndMigrate = async () => {
 // default grades exist.
 const seedTrees = async () => {
   try {
-    const count = await Tree.count();
-    if (count > 0) return;
+    const defaultTree = await Tree.findByPk(1);
+    if (defaultTree) return;
     await Tree.bulkCreate(demoTree.data || [], { ignoreDuplicates: true });
+    if (!(await Tree.findByPk(1))) {
+      throw new Error("Default tree seed did not create required tree id 1");
+    }
     logger.info("✅ Default trees seeded");
   } catch (error) {
     logger.error("❌ Error seeding default trees:", { error });
+    throw error;
   }
 };
 
@@ -209,6 +220,7 @@ const connectToDb = async (): Promise<void> => {
     await seedTrees();
   } catch (error) {
     logger.error("❌ Database connection error:", { error });
+    throw error;
   }
 };
 

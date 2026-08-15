@@ -3,7 +3,7 @@ import User from "../models/user.model";
 import logger from "../config/logger";
 
 import generateOTP from "../helpers/generateOtp";
-import { sendEmail } from "../helpers/sendEmail";
+import { EmailDeliveryError, sendEmail } from "../helpers/sendEmail";
 import { buildOtpEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
 import {
   isOtpLocked,
@@ -12,7 +12,20 @@ import {
 } from "../helpers/otpGuard";
 
 const sendOtp = async (req: Request, res: Response) => {
-  const { email } = req.body;
+  const email = typeof req.body.email === "string"
+    ? req.body.email.trim().toLowerCase()
+    : "";
+  let otpUser: User | null = null;
+  let createdForOtp = false;
+
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({
+      status: 400,
+      code: "INVALID_EMAIL",
+      message: "A valid email address is required",
+    });
+  }
+
   try {
     const existingUser = await User.findOne({ where: { email: email } });
     if (existingUser && existingUser.isAccess) {
@@ -30,6 +43,7 @@ const sendOtp = async (req: Request, res: Response) => {
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
     if (existingUser && !existingUser.isAccess) {
+      otpUser = existingUser;
       await existingUser.update({
         resetOTP: otp,
         otpExpiry,
@@ -49,11 +63,12 @@ const sendOtp = async (req: Request, res: Response) => {
       });
     }
 
-    await User.create({
+    otpUser = await User.create({
       email,
       resetOTP: otp,
       otpExpiry,
     });
+    createdForOtp = true;
 
     await sendEmail({
       to: email,
@@ -69,15 +84,46 @@ const sendOtp = async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error("Error sending OTP:", { error, email });
-    return res.status(500).json({
-      status: 500,
-      error: error,
+    if (otpUser) {
+      try {
+        if (createdForOtp) {
+          await otpUser.destroy();
+        } else {
+          await otpUser.update({ resetOTP: null, otpExpiry: null });
+        }
+      } catch (cleanupError) {
+        logger.error("Failed to clean up OTP state after delivery error", {
+          error: cleanupError,
+          userId: otpUser.id,
+        });
+      }
+    }
+
+    const status = error instanceof EmailDeliveryError ? error.statusCode : 500;
+    return res.status(status).json({
+      status,
+      code: error instanceof EmailDeliveryError
+        ? "EMAIL_DELIVERY_FAILED"
+        : "OTP_REQUEST_FAILED",
+      message: error instanceof EmailDeliveryError
+        ? "Email service is temporarily unavailable. Please try again."
+        : "Unable to send OTP",
     });
   }
 };
 
 const verifyOTP = async (req: Request, res: Response) => {
-  const { email, otp } = req.body;
+  const email = typeof req.body.email === "string"
+    ? req.body.email.trim().toLowerCase()
+    : "";
+  const otp = String(req.body.otp || "").trim();
+
+  if (!email || !/^\d{6}$/.test(otp)) {
+    return res.status(400).json({
+      status: 400,
+      message: "A valid email and six-digit OTP are required",
+    });
+  }
 
   try {
     const user = await User.findOne({ where: { email } });
@@ -117,7 +163,6 @@ const verifyOTP = async (req: Request, res: Response) => {
     return res.status(500).json({
       status: 500,
       message: "Error verifying OTP",
-      error,
     });
   }
 };

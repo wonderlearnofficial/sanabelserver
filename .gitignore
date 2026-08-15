@@ -32,3 +32,6 @@ yarn-error.log*
 .eslintcache
 dist/*
 config.bat
+
+# Runtime application logs are local/deployment artifacts, not source files.
+/logs/

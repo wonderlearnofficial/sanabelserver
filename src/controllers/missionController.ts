@@ -204,7 +204,7 @@ const listPendingRequestsForParent = async (req: Request, res: Response) => {
           model: Student,
           as: "Student",
           include: [
-            { model: User, as: "User", attributes: ["firstName", "lastName", "profileImg"] },
+            { model: User, as: "user", attributes: ["firstName", "lastName", "profileImg"] },
             { model: Class, as: "Class", attributes: ["id", "classname", "grade"], required: false },
           ],
         },
@@ -287,7 +287,7 @@ const listPendingRequestsForTeacher = async (req: Request, res: Response) => {
           model: Student,
           as: "Student",
           include: [
-            { model: User, as: "User", attributes: ["firstName", "lastName", "profileImg"] },
+            { model: User, as: "user", attributes: ["firstName", "lastName", "profileImg"] },
             { model: Class, as: "Class", attributes: ["id", "classname", "grade"], required: false },
           ],
         },
@@ -373,13 +373,13 @@ const getMyApprovers = async (req: Request, res: Response) => {
       parentIds.length > 0
         ? Parent.findAll({
             where: { id: parentIds },
-            include: [{ model: User, as: "User", attributes: ["firstName", "lastName"] }],
+            include: [{ model: User, as: "user", attributes: ["firstName", "lastName"] }],
           })
         : [],
       teacherIds.length > 0
         ? Teacher.findAll({
             where: { id: teacherIds },
-            include: [{ model: User, as: "User", attributes: ["firstName", "lastName"] }],
+            include: [{ model: User, as: "user", attributes: ["firstName", "lastName"] }],
           })
         : [],
     ]);
@@ -388,12 +388,12 @@ const getMyApprovers = async (req: Request, res: Response) => {
       ...parents.map((p: any) => ({
         id: p.id,
         type: "parent",
-        name: `${p.User?.firstName || ""} ${p.User?.lastName || ""}`.trim(),
+        name: `${p.user?.firstName || ""} ${p.user?.lastName || ""}`.trim(),
       })),
       ...teachers.map((t: any) => ({
         id: t.id,
         type: "teacher",
-        name: `${t.User?.firstName || ""} ${t.User?.lastName || ""}`.trim(),
+        name: `${t.user?.firstName || ""} ${t.user?.lastName || ""}`.trim(),
       })),
     ];
 

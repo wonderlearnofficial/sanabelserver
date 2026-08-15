@@ -39,9 +39,9 @@ class Student extends Model {
   declare grade: CreationOptional<String>;
   declare GradeEntity: any;
   static associate(models: any) {
-    Student.belongsTo(User, { foreignKey: "userId", as: "User" });
+    Student.belongsTo(User, { foreignKey: "userId", as: "user" });
     Student.belongsTo(Parent, { foreignKey: "ParentId", as: "Parent" });
-    Student.belongsTo(Organization, { foreignKey: "organizationId", as: "Organization" });
+    Student.belongsTo(Organization, { foreignKey: "organizationId", as: "organization" });
     Student.belongsTo(Class, { foreignKey: "classId", as: "Class" });
     Student.belongsTo(Tree, { foreignKey: "treeProgress", as: "Tree" });
     Student.belongsTo(Groupe, { foreignKey: "groupeId", as: "Groupe" });

@@ -10,14 +10,21 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 // Set up web-push VAPID details
-const initWebPush = () => {
+export const initWebPush = () => {
+  const pushEnabled = process.env.PUSH_NOTIFICATIONS_ENABLED === "true";
+  if (!pushEnabled) {
+    logger.info("Push notifications are disabled by configuration");
+    return false;
+  }
+
   const vapidPublicKey = process.env.VAPID_PUBLIC_KEY;
   const vapidPrivateKey = process.env.VAPID_PRIVATE_KEY;
-  const vapidSubject = process.env.VAPID_SUBJECT || "mailto:admin@example.com";
+  const vapidSubject = process.env.VAPID_SUBJECT;
 
-  if (!vapidPublicKey || !vapidPrivateKey) {
-    logger.warn("VAPID keys are missing. Push notifications will not work.");
-    return false;
+  if (!vapidPublicKey || !vapidPrivateKey || !vapidSubject) {
+    throw new Error(
+      "Push notifications are enabled but VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY, or VAPID_SUBJECT is missing",
+    );
   }
 
   webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);

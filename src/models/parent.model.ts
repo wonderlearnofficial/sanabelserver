@@ -8,7 +8,7 @@ class Parent extends Model {
   declare userId: CreationOptional<number>; // Add userId field
   declare user: User | null;
   static associate(models: any) {
-    Parent.belongsTo(models.User, { foreignKey: "userId", as: "User" });
+    Parent.belongsTo(models.User, { foreignKey: "userId", as: "user" });
     Parent.hasMany(models.Student, { foreignKey: "ParentId", as: "Students" });
   }
   

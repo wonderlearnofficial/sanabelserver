@@ -7,8 +7,8 @@ class Representative extends Model {
   declare id: CreationOptional<number>;
   declare user: User | undefined;
   static associate(models: any) {
-    Representative.belongsTo(models.User, { foreignKey: "userId", as: "User" });
-    Representative.belongsTo(models.Organization, { foreignKey: "organizationId", as: "Organization" });
+    Representative.belongsTo(models.User, { foreignKey: "userId", as: "user" });
+    Representative.belongsTo(models.Organization, { foreignKey: "organizationId", as: "organization" });
   }
   
   static initModel(sequelize: Sequelize) {

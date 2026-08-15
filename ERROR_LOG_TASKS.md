@@ -21,6 +21,20 @@ Sources: `server/logs/error.log` and `server/logs/combined.log`
   - 3 `SequelizeUniqueConstraintError`
   - 1 `SequelizeAccessDeniedError`
 
+## Fix pass status — 2026-08-15
+
+- Implemented database-gated startup, `/health/live`, `/health/ready`, and
+  migrations-only production startup. Live database/deployment verification is
+  still required for ERR-001 through ERR-003.
+- Standardized direct user/organization associations and verified model
+  initialization is idempotent. Live endpoint smoke tests remain for ERR-005.
+- Added strict relationship-ID validation and transactions to admin student/user
+  updates. Production-like integration coverage remains for ERR-004 and ERR-006.
+- Hardened OTP delivery failures and parent connection validation. Successful
+  provider/database integration tests remain for ERR-009 and ERR-010.
+- Completed the local implementation and automated checks for ERR-007,
+  ERR-008, and ERR-011.
+
 ## P0 — Do First
 
 ### [ ] ERR-001 — Restore and verify database connectivity
@@ -145,7 +159,7 @@ coverage.
 
 ## P2 — Reliability and Observability
 
-### [ ] ERR-007 — Improve error serialization and request tracing
+### [x] ERR-007 — Improve error serialization and request tracing
 
 **Evidence:** Several entries contain `"error": {}` and therefore omit the
 actual message and stack. Matching controller and HTTP entries cannot be tied
@@ -163,7 +177,7 @@ stack and no secrets.
 
 **Likely area:** `server/src/config/logger.ts` and request logging middleware.
 
-### [ ] ERR-008 — Add log rotation and stop tracking runtime logs
+### [x] ERR-008 — Add log rotation and stop tracking runtime logs
 
 **Evidence:** `combined.log` is already about 14 MB, logger file transports have
 no rotation/retention policy, and `/logs` is not ignored by Git.
@@ -209,7 +223,7 @@ serialized as an empty object.
 **Done when:** Expected invalid states return `4xx`, valid states return `2xx`,
 and unexpected failures include traceable logs.
 
-### [ ] ERR-011 — Configure or deliberately disable push notifications
+### [x] ERR-011 — Configure or deliberately disable push notifications
 
 **Evidence:** Every latest server start warns that VAPID keys are missing, so
 web push cannot work.

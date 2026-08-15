@@ -21,6 +21,8 @@ module.exports = {
   },
   production: {
     ...common,
-    database: `${process.env.MYSQL_DB_NAME}_prod`,
+    // Production providers supply the exact database name. Appending a suffix
+    // here made migrations target a different/nonexistent database.
+    database: process.env.MYSQL_DB_NAME,
   },
 };

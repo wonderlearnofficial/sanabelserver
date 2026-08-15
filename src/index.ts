@@ -25,6 +25,7 @@ import { router as dev_routes } from "./routes/dev_routes";
 import { initPrayerTimeScheduler } from "./services/prayerTimeService";
 import logger from "./config/logger";
 import requestLogger from "./middleware/requestLogger";
+import type { Server } from "http";
 // CORS allowlist. Trusted web origins come from CORS_ORIGINS (comma-separated).
 // Requests with no Origin header (native mobile apps, server-to-server, health
 // checks) are always allowed, as are the Capacitor/localhost origins the mobile
@@ -61,6 +62,7 @@ const corsOptions = {
 };
 
 const app = express();
+let databaseReady = false;
 // Railway (and most PaaS hosts) assign their own port via process.env.PORT and
 // expect the app to bind to it; SERVER_PORT remains the local-dev override.
 const PORT = process.env.PORT || process.env.SERVER_PORT || 5000;
@@ -144,6 +146,17 @@ if (process.env.NODE_ENV !== "production") {
   app.use("/dev", dev_routes);
 }
 
+app.get("/health/live", (_req, res) => {
+  res.status(200).json({ status: "ok" });
+});
+
+app.get("/health/ready", (_req, res) => {
+  res.status(databaseReady ? 200 : 503).json({
+    status: databaseReady ? "ready" : "not_ready",
+    database: databaseReady ? "connected" : "disconnected",
+  });
+});
+
 app.get("/", (req, res) => {
   res.send("Sanabel Server is running.");
 });
@@ -200,12 +213,26 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
   });
 });
 
-// Start server
-app.listen(PORT, async () => {
-  logger.info(`Server is running on http://localhost:${PORT}`);
-  logger.info(`Swagger docs available at http://localhost:${PORT}/api-docs`);
+const startServer = async (): Promise<Server> => {
   await connectToDb();
-  
-  // Initialize Prayer Time Scheduler
+
+  // Initialize the optional Prayer Time Scheduler only after models and the
+  // database are ready. Invalid enabled-push configuration fails startup.
   initPrayerTimeScheduler();
-});
+  databaseReady = true;
+
+  return app.listen(PORT, () => {
+    logger.info(`Server is running on http://localhost:${PORT}`);
+    logger.info(`Swagger docs available at http://localhost:${PORT}/api-docs`);
+  });
+};
+
+if (require.main === module) {
+  startServer().catch((error) => {
+    databaseReady = false;
+    logger.error("Server startup failed", { error });
+    process.exitCode = 1;
+  });
+}
+
+export { app, startServer };

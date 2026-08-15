@@ -21,6 +21,10 @@ import { QueryTypes } from "sequelize";
 import { generatePassword } from "../helpers/generatePassword";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
 import { getImportField } from "../helpers/importFieldLookup";
+import {
+  InvalidOptionalIdError,
+  parseOptionalPositiveId,
+} from "../helpers/optionalId";
 
 const DEFAULT_RESET_PASSWORD = "changeme123";
 
@@ -405,88 +409,89 @@ const getStudentDetail = async (req: Request, res: Response) => {
 const updateStudent = async (req: Request, res: Response) => {
   try {
     const studentId = Number(req.params.studentId);
-    if (!studentId) {
+    if (!Number.isInteger(studentId) || studentId <= 0) {
       return res.status(400).json({ message: "Invalid student id" });
     }
 
     const { firstName, lastName, email, gradeId, grade, organizationId, classId, profileImg } = req.body;
+    const requestedOrganizationId = parseOptionalPositiveId(organizationId, "organizationId");
+    const requestedClassId = parseOptionalPositiveId(classId, "classId");
+    const requestedGradeId = parseOptionalPositiveId(gradeId, "gradeId");
 
-    const student = await Student.findByPk(studentId);
-    if (!student) {
-      return res.status(404).json({ message: "Student not found" });
-    }
+    return await User.sequelize!.transaction(async (transaction) => {
+      const student = await Student.findByPk(studentId, { transaction });
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
 
-    const userRecord = student.userId
-      ? await User.findOne({ where: { id: student.userId } })
-      : null;
+      const userRecord = student.userId
+        ? await User.findOne({ where: { id: student.userId }, transaction })
+        : null;
 
-    const resultingOrganizationId =
-      organizationId !== undefined
-        ? (organizationId === null || organizationId === "" ? null : Number(organizationId))
+      const resultingOrganizationId = requestedOrganizationId !== undefined
+        ? requestedOrganizationId
         : student.organizationId;
 
-    if (organizationId !== undefined && resultingOrganizationId !== null) {
-      const organization = await Organization.findByPk(resultingOrganizationId);
-      if (!organization) {
-        return res.status(400).json({ message: "Target organization does not exist" });
-      }
-    }
-
-    const resultingClassId =
-      classId !== undefined
-        ? (classId === null || classId === "" ? null : Number(classId))
-        : undefined;
-
-    if (resultingClassId !== undefined && resultingClassId !== null) {
-      const targetClass = await Class.findByPk(resultingClassId);
-      if (!targetClass) {
-        return res.status(400).json({ message: "Target class does not exist" });
-      }
-      if (targetClass.organizationId !== resultingOrganizationId) {
-        return res.status(400).json({
-          message: "Target class does not belong to the student's organization",
-        });
-      }
-    }
-
-    const userUpdateData: Record<string, any> = {};
-    if (firstName) userUpdateData.firstName = firstName;
-    if (lastName) userUpdateData.lastName = lastName;
-    if (email) userUpdateData.email = email;
-    if (profileImg && typeof profileImg === "object") userUpdateData.profileImg = profileImg;
-
-    const studentUpdateData: Record<string, any> = {};
-    if (gradeId !== undefined) {
-      if (gradeId === "" || gradeId === null) {
-        studentUpdateData.gradeId = null;
-        studentUpdateData.grade = null;
-      } else {
-        const gradeRecord = await Grade.findByPk(Number(gradeId));
-        if (!gradeRecord) {
-          return res.status(400).json({ message: "Target grade does not exist" });
+      if (requestedOrganizationId !== undefined && requestedOrganizationId !== null) {
+        const organization = await Organization.findByPk(requestedOrganizationId, { transaction });
+        if (!organization) {
+          return res.status(400).json({ message: "Target organization does not exist" });
         }
-        studentUpdateData.gradeId = gradeRecord.id;
-        studentUpdateData.grade = gradeRecord.name;
       }
-    } else if (grade !== undefined) {
-      studentUpdateData.grade = grade === "" ? null : grade;
-    }
-    if (organizationId !== undefined) {
-      studentUpdateData.organizationId = resultingOrganizationId;
-      // If organization is cleared, also clear classId
-      if (resultingOrganizationId === null) studentUpdateData.classId = null;
-    }
-    if (resultingClassId !== undefined) studentUpdateData.classId = resultingClassId;
 
-    if (userRecord && Object.keys(userUpdateData).length > 0) {
-      await userRecord.update(userUpdateData);
-    }
-    if (Object.keys(studentUpdateData).length > 0) {
-      await student.update(studentUpdateData);
-    }
+      if (requestedClassId !== undefined && requestedClassId !== null) {
+        const targetClass = await Class.findByPk(requestedClassId, { transaction });
+        if (!targetClass) {
+          return res.status(400).json({ message: "Target class does not exist" });
+        }
+        if (targetClass.organizationId !== resultingOrganizationId) {
+          return res.status(400).json({
+            message: "Target class does not belong to the student's organization",
+          });
+        }
+      }
 
-    return res.status(200).json({ message: "Student updated successfully" });
+      const userUpdateData: Record<string, any> = {};
+      if (firstName) userUpdateData.firstName = firstName;
+      if (lastName) userUpdateData.lastName = lastName;
+      if (email) userUpdateData.email = email;
+      if (profileImg && typeof profileImg === "object") userUpdateData.profileImg = profileImg;
+
+      const studentUpdateData: Record<string, any> = {};
+      if (requestedGradeId !== undefined) {
+        if (requestedGradeId === null) {
+          studentUpdateData.gradeId = null;
+          studentUpdateData.grade = null;
+        } else {
+          const gradeRecord = await Grade.findByPk(requestedGradeId, { transaction });
+          if (!gradeRecord) {
+            return res.status(400).json({ message: "Target grade does not exist" });
+          }
+          studentUpdateData.gradeId = gradeRecord.id;
+          studentUpdateData.grade = gradeRecord.name;
+        }
+      } else if (grade !== undefined) {
+        studentUpdateData.grade = grade === "" ? null : grade;
+      }
+      if (requestedOrganizationId !== undefined) {
+        studentUpdateData.organizationId = resultingOrganizationId;
+        if (resultingOrganizationId === null) studentUpdateData.classId = null;
+      }
+      if (requestedClassId !== undefined) studentUpdateData.classId = requestedClassId;
+
+      if (userRecord && Object.keys(userUpdateData).length > 0) {
+        await userRecord.update(userUpdateData, { transaction });
+      }
+      if (Object.keys(studentUpdateData).length > 0) {
+        await student.update(studentUpdateData, { transaction });
+      }
+
+      return res.status(200).json({ message: "Student updated successfully" });
+    });
   } catch (error: any) {
+    if (error instanceof InvalidOptionalIdError) {
+      return res.status(400).json({ message: error.message });
+    }
     if (error?.name === "SequelizeUniqueConstraintError") {
       return res.status(409).json({ message: "Email already in use" });
     }
@@ -591,14 +596,14 @@ const listTeachers = async (req: Request, res: Response) => {
       include: [
         {
           model: User,
-          as: "User",
+          as: "user",
           attributes: ["id", "firstName", "lastName", "email"],
           where: Object.keys(userWhere).length ? userWhere : undefined,
           required: !!search,
         },
         {
           model: Organization,
-          as: "Organization",
+          as: "organization",
           attributes: ["id", "name"],
           required: false,
         },
@@ -651,7 +656,7 @@ const listParents = async (req: Request, res: Response) => {
       include: [
         {
           model: User,
-          as: "User",
+          as: "user",
           attributes: ["id", "firstName", "lastName", "email"],
           where: Object.keys(userWhere).length ? userWhere : undefined,
           required: !!search,
@@ -828,123 +833,144 @@ const createUser = async (req: Request, res: Response) => {
 const updateUser = async (req: Request, res: Response) => {
   try {
     const userId = Number(req.params.userId);
-    if (!userId) {
+    if (!Number.isInteger(userId) || userId <= 0) {
       return res.status(400).json({ message: "Invalid user id" });
     }
 
     const { firstName, lastName, email, organizationId, classId, gradeId, grade } = req.body;
+    const requestedOrganizationId = parseOptionalPositiveId(organizationId, "organizationId");
+    const requestedClassId = parseOptionalPositiveId(classId, "classId");
+    const requestedGradeId = parseOptionalPositiveId(gradeId, "gradeId");
 
-    const userRecord = await User.findByPk(userId);
-    if (!userRecord) {
-      return res.status(404).json({ message: "User not found" });
-    }
-
-    const userUpdateData: Record<string, any> = {};
-    if (firstName) userUpdateData.firstName = firstName;
-    if (lastName !== undefined) userUpdateData.lastName = lastName;
-    if (email) userUpdateData.email = email;
-
-    if (userRecord.role === "Student") {
-      const student = await Student.findOne({ where: { userId } });
-      if (!student) {
-        return res.status(404).json({ message: "Student record not found for this user" });
+    return await User.sequelize!.transaction(async (transaction) => {
+      const userRecord = await User.findByPk(userId, { transaction });
+      if (!userRecord) {
+        return res.status(404).json({ message: "User not found" });
       }
 
-      const resultingOrganizationId =
-        organizationId !== undefined
-          ? (organizationId === null || organizationId === "" ? null : Number(organizationId))
+      const userUpdateData: Record<string, any> = {};
+      if (firstName) userUpdateData.firstName = firstName;
+      if (lastName !== undefined) userUpdateData.lastName = lastName;
+      if (email) userUpdateData.email = email;
+
+      if (userRecord.role === "Student") {
+        const student = await Student.findOne({ where: { userId }, transaction });
+        if (!student) {
+          return res.status(404).json({ message: "Student record not found for this user" });
+        }
+
+        const resultingOrganizationId = requestedOrganizationId !== undefined
+          ? requestedOrganizationId
           : student.organizationId;
 
-      if (organizationId !== undefined && resultingOrganizationId !== null) {
-        const organization = await Organization.findByPk(resultingOrganizationId);
-        if (!organization) {
-          return res.status(400).json({ message: "Target organization does not exist" });
-        }
-      }
-
-      if (classId !== undefined && classId !== "" && classId !== null) {
-        const targetClass = await Class.findByPk(Number(classId));
-        if (!targetClass) {
-          return res.status(400).json({ message: "Target class does not exist" });
-        }
-        if (targetClass.organizationId !== resultingOrganizationId) {
-          return res.status(400).json({ message: "Target class does not belong to the selected organization" });
-        }
-      }
-
-      const studentUpdateData: Record<string, any> = {};
-      if (gradeId !== undefined) {
-        if (gradeId === "" || gradeId === null) {
-          studentUpdateData.gradeId = null;
-          studentUpdateData.grade = null;
-        } else {
-          const gradeRecord = await Grade.findByPk(Number(gradeId));
-          if (!gradeRecord) {
-            return res.status(400).json({ message: "Target grade does not exist" });
+        if (requestedOrganizationId !== undefined && requestedOrganizationId !== null) {
+          const organization = await Organization.findByPk(requestedOrganizationId, { transaction });
+          if (!organization) {
+            return res.status(400).json({ message: "Target organization does not exist" });
           }
-          studentUpdateData.gradeId = gradeRecord.id;
-          studentUpdateData.grade = gradeRecord.name;
         }
-      } else if (grade !== undefined) {
-        studentUpdateData.grade = grade === "" ? null : grade;
-      }
 
-      if (organizationId !== undefined) {
-        studentUpdateData.organizationId = resultingOrganizationId;
-        // If organization is cleared, also clear classId
-        if (resultingOrganizationId === null) {
-          studentUpdateData.classId = null;
+        if (requestedClassId !== undefined && requestedClassId !== null) {
+          const targetClass = await Class.findByPk(requestedClassId, { transaction });
+          if (!targetClass) {
+            return res.status(400).json({ message: "Target class does not exist" });
+          }
+          if (targetClass.organizationId !== resultingOrganizationId) {
+            return res.status(400).json({ message: "Target class does not belong to the selected organization" });
+          }
         }
-      }
-      if (classId !== undefined) studentUpdateData.classId = classId === "" ? null : (classId === null ? null : Number(classId));
 
-      if (Object.keys(studentUpdateData).length > 0) {
-        await student.update(studentUpdateData);
-      }
-    } else if (userRecord.role === "Teacher") {
-      const teacher = await Teacher.findOne({ where: { userId } });
-      if (!teacher) {
-        return res.status(404).json({ message: "Teacher record not found for this user" });
-      }
+        const studentUpdateData: Record<string, any> = {};
+        if (requestedGradeId !== undefined) {
+          if (requestedGradeId === null) {
+            studentUpdateData.gradeId = null;
+            studentUpdateData.grade = null;
+          } else {
+            const gradeRecord = await Grade.findByPk(requestedGradeId, { transaction });
+            if (!gradeRecord) {
+              return res.status(400).json({ message: "Target grade does not exist" });
+            }
+            studentUpdateData.gradeId = gradeRecord.id;
+            studentUpdateData.grade = gradeRecord.name;
+          }
+        } else if (grade !== undefined) {
+          studentUpdateData.grade = grade === "" ? null : grade;
+        }
 
-      const resultingOrganizationId =
-        organizationId !== undefined
-          ? (organizationId === null || organizationId === "" ? null : Number(organizationId))
+        if (requestedOrganizationId !== undefined) {
+          studentUpdateData.organizationId = resultingOrganizationId;
+          if (resultingOrganizationId === null) studentUpdateData.classId = null;
+        }
+        if (requestedClassId !== undefined) studentUpdateData.classId = requestedClassId;
+
+        if (Object.keys(studentUpdateData).length > 0) {
+          await student.update(studentUpdateData, { transaction });
+        }
+      } else if (userRecord.role === "Teacher") {
+        const teacher = await Teacher.findOne({ where: { userId }, transaction });
+        if (!teacher) {
+          return res.status(404).json({ message: "Teacher record not found for this user" });
+        }
+
+        const resultingOrganizationId = requestedOrganizationId !== undefined
+          ? requestedOrganizationId
           : teacher.organizationId;
 
-      if (organizationId !== undefined && resultingOrganizationId !== null) {
-        const organization = await Organization.findByPk(resultingOrganizationId);
-        if (!organization) {
-          return res.status(400).json({ message: "Target organization does not exist" });
+        if (requestedOrganizationId !== undefined && requestedOrganizationId !== null) {
+          const organization = await Organization.findByPk(requestedOrganizationId, { transaction });
+          if (!organization) {
+            return res.status(400).json({ message: "Target organization does not exist" });
+          }
         }
-      }
 
-      if (organizationId !== undefined) {
-        await teacher.update({ organizationId: resultingOrganizationId });
-      }
+        let requestedClasses: Class[] | undefined;
+        if (req.body.classIds !== undefined) {
+          if (!Array.isArray(req.body.classIds)) {
+            return res.status(400).json({ message: "classIds must be an array" });
+          }
 
-      // Update classes assigned to this teacher
-      if (req.body.classIds !== undefined && Array.isArray(req.body.classIds)) {
-        // First, clear teacherId for all classes currently assigned to this teacher
-        await Class.update({ teacherId: null }, { where: { teacherId: teacher.id } });
+          requestedClasses = [];
+          for (const rawClassId of req.body.classIds) {
+            const parsedClassId = parseOptionalPositiveId(rawClassId, "classIds");
+            if (parsedClassId == null) {
+              throw new InvalidOptionalIdError("classIds");
+            }
+            const targetClass = await Class.findByPk(parsedClassId, { transaction });
+            if (!targetClass) {
+              return res.status(400).json({ message: `Class ${parsedClassId} does not exist` });
+            }
+            if (targetClass.organizationId !== resultingOrganizationId) {
+              return res.status(400).json({ message: `Class ${parsedClassId} does not belong to the selected organization` });
+            }
+            requestedClasses.push(targetClass);
+          }
+        }
 
-        // Then assign the new classes
-        for (const classId of req.body.classIds) {
-          const targetClass = await Class.findByPk(Number(classId));
-          // Only assign if the class exists and belongs to the teacher's organization
-          if (targetClass && targetClass.organizationId === teacher.organizationId) {
-            await targetClass.update({ teacherId: teacher.id });
+        if (requestedOrganizationId !== undefined) {
+          await teacher.update({ organizationId: resultingOrganizationId }, { transaction });
+        }
+
+        if (requestedClasses) {
+          await Class.update(
+            { teacherId: null },
+            { where: { teacherId: teacher.id }, transaction },
+          );
+          for (const targetClass of requestedClasses) {
+            await targetClass.update({ teacherId: teacher.id }, { transaction });
           }
         }
       }
-    }
 
-    if (Object.keys(userUpdateData).length > 0) {
-      await userRecord.update(userUpdateData);
-    }
+      if (Object.keys(userUpdateData).length > 0) {
+        await userRecord.update(userUpdateData, { transaction });
+      }
 
-    return res.status(200).json({ message: "User updated successfully" });
+      return res.status(200).json({ message: "User updated successfully" });
+    });
   } catch (error: any) {
+    if (error instanceof InvalidOptionalIdError) {
+      return res.status(400).json({ message: error.message });
+    }
     if (error?.name === "SequelizeUniqueConstraintError") {
       return res.status(409).json({ message: "Email already in use" });
     }
@@ -1221,9 +1247,17 @@ const createGrade = async (req: Request, res: Response) => {
     }
 
     const normalizedName = name.trim().toLowerCase();
+    if (!normalizedName) {
+      return res.status(400).json({ message: "name is required" });
+    }
+    const requestedOrganizationId = parseOptionalPositiveId(
+      organizationId,
+      "organizationId",
+    );
+    const resolvedOrganizationId = requestedOrganizationId ?? null;
 
-    if (organizationId) {
-      const organization = await Organization.findByPk(Number(organizationId));
+    if (resolvedOrganizationId !== null) {
+      const organization = await Organization.findByPk(resolvedOrganizationId);
       if (!organization) {
         return res.status(400).json({ message: "Target organization does not exist" });
       }
@@ -1232,7 +1266,7 @@ const createGrade = async (req: Request, res: Response) => {
     const existing = await Grade.findOne({
       where: {
         name: normalizedName,
-        organizationId: organizationId ? Number(organizationId) : null,
+        organizationId: resolvedOrganizationId,
       },
     });
     if (existing) {
@@ -1241,10 +1275,13 @@ const createGrade = async (req: Request, res: Response) => {
 
     const grade = await Grade.create({
       name: normalizedName,
-      organizationId: organizationId ? Number(organizationId) : null,
+      organizationId: resolvedOrganizationId,
     });
     return res.status(201).json({ data: grade });
   } catch (error: any) {
+    if (error instanceof InvalidOptionalIdError) {
+      return res.status(400).json({ message: error.message });
+    }
     if (error?.name === "SequelizeUniqueConstraintError") {
       return res.status(409).json({ message: "Grade already exists in this school" });
     }
@@ -1308,7 +1345,7 @@ const importGrades = async (req: Request, res: Response) => {
 const updateGrade = async (req: Request, res: Response) => {
   try {
     const gradeId = Number(req.params.gradeId);
-    if (!gradeId) {
+    if (!Number.isInteger(gradeId) || gradeId <= 0) {
       return res.status(400).json({ message: "Invalid grade id" });
     }
 
@@ -1319,8 +1356,17 @@ const updateGrade = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Grade not found" });
     }
 
-    const resolvedOrgId = organizationId !== undefined ? (organizationId ? Number(organizationId) : null) : grade.organizationId;
-    const normalizedName = name ? name.trim().toLowerCase() : grade.name;
+    const requestedOrganizationId = parseOptionalPositiveId(
+      organizationId,
+      "organizationId",
+    );
+    const resolvedOrgId = requestedOrganizationId !== undefined
+      ? requestedOrganizationId
+      : grade.organizationId;
+    if (name !== undefined && (typeof name !== "string" || !name.trim())) {
+      return res.status(400).json({ message: "name must be a non-empty string" });
+    }
+    const normalizedName = name !== undefined ? name.trim().toLowerCase() : grade.name;
 
     if (resolvedOrgId) {
       const organization = await Organization.findByPk(resolvedOrgId);
@@ -1347,6 +1393,9 @@ const updateGrade = async (req: Request, res: Response) => {
 
     return res.status(200).json({ data: grade });
   } catch (error: any) {
+    if (error instanceof InvalidOptionalIdError) {
+      return res.status(400).json({ message: error.message });
+    }
     if (error?.name === "SequelizeUniqueConstraintError") {
       return res.status(409).json({ message: "Grade name already exists in this school" });
     }
@@ -1666,7 +1715,7 @@ const listTaskHistory = async (req: Request, res: Response) => {
             include: [
               {
                 model: User,
-                as: "User",
+                as: "user",
                 attributes: ["firstName", "lastName", "email"],
                 required: false,
               },
@@ -1679,7 +1728,7 @@ const listTaskHistory = async (req: Request, res: Response) => {
             include: [
               {
                 model: User,
-                as: "User",
+                as: "user",
                 attributes: ["firstName", "lastName", "email"],
                 required: false,
               },
@@ -1728,7 +1777,7 @@ const listTaskHistory = async (req: Request, res: Response) => {
     if (search && typeof search === "string" && search.trim() !== "") {
       const q = search.trim().toLowerCase();
       filteredRows = rows.filter((item: any) => {
-        const studentUser = item.Student?.user || item.Student?.User;
+        const studentUser = item.Student?.user;
         const sName = `${studentUser?.firstName || ""} ${studentUser?.lastName || ""}`.toLowerCase();
         const sEmail = (studentUser?.email || "").toLowerCase();
         const taskTitle = (item.Task?.title || "").toLowerCase();
@@ -1795,4 +1844,3 @@ export {
   listScores,
   listTaskHistory,
 };
-
