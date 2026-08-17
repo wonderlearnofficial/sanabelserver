@@ -21,7 +21,12 @@ import Challenge from "../models/challenge.model";
 import StudentChallenge from "../models/student-challenge.model";
 import { JwtPayload } from "jsonwebtoken";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
-import { sendPrayerNotification } from "../services/prayerTimeService";
+import {
+  sendPrayerNotification,
+  schedulePrayersForUser,
+  cancelPrayersForUser,
+  isPushReady,
+} from "../services/prayerTimeService";
 import {
   isOtpLocked,
   recordOtpFailure,
@@ -569,6 +574,22 @@ const subscribePushNotification = async (req: Request, res: Response) => {
 
   const { subscription, location } = req.body;
 
+  if (!subscription || typeof subscription !== "object" || !subscription.endpoint) {
+    return res
+      .status(400)
+      .json({ status: 400, message: "A valid push subscription is required" });
+  }
+  if (
+    !location ||
+    typeof location.latitude !== "number" ||
+    typeof location.longitude !== "number"
+  ) {
+    return res.status(400).json({
+      status: 400,
+      message: "A location with numeric latitude and longitude is required",
+    });
+  }
+
   try {
     const user = await User.findByPk(authUser.id);
     if (user) {
@@ -577,9 +598,13 @@ const subscribePushNotification = async (req: Request, res: Response) => {
         location: location,
       });
 
+      // Start notifying today — not only after the next midnight run.
+      schedulePrayersForUser(user, new Date());
+
       return res.status(200).json({
         status: 200,
         message: "Subscribed to push notifications successfully",
+        pushEnabled: isPushReady(),
       });
     } else {
       return res.status(404).json({ status: 404, message: "User not found" });
@@ -589,6 +614,33 @@ const subscribePushNotification = async (req: Request, res: Response) => {
     return res
       .status(500)
       .json({ status: 500, message: "Failed to subscribe" });
+  }
+};
+
+const unsubscribePushNotification = async (req: Request, res: Response) => {
+  const authUser = (req as Request & { user?: JwtPayload }).user;
+  if (!authUser) {
+    return res.status(401).json({ status: 401, message: "Unauthorized" });
+  }
+
+  try {
+    const user = await User.findByPk(authUser.id);
+    if (!user) {
+      return res.status(404).json({ status: 404, message: "User not found" });
+    }
+
+    cancelPrayersForUser(user.id);
+    await user.update({ pushSubscription: null, location: null });
+
+    return res.status(200).json({
+      status: 200,
+      message: "Unsubscribed from push notifications successfully",
+    });
+  } catch (error) {
+    logger.error("Unsubscribe push error:", { error });
+    return res
+      .status(500)
+      .json({ status: 500, message: "Failed to unsubscribe" });
   }
 };
 
@@ -603,4 +655,5 @@ export {
   refreshAccessToken,
   logout,
   subscribePushNotification,
+  unsubscribePushNotification,
 };

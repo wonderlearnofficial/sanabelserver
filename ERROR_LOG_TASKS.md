@@ -35,6 +35,34 @@ Sources: `server/logs/error.log` and `server/logs/combined.log`
 - Completed the local implementation and automated checks for ERR-007,
   ERR-008, and ERR-011.
 
+## Fix pass status — 2026-08-17 (shop / tree / missions / UI)
+
+- **Shop purchase (`PATCH /students/buy-water-seeder`)**: no longer fails with
+  404 when the student has no water/seeder challenge rows; challenge progress
+  no longer double-counts; whole purchase now runs in one transaction;
+  insufficient balance returns a structured 400 with `required` / `available` /
+  `missing` per color. Covered by `tests/shop-and-tree.test.js`.
+- **Tree growth (`PATCH /students/grow-tree`)**: stage-challenge updates were
+  fired in an un-awaited `forEach` and could be lost after the response; now
+  awaited inside a transaction. Stage milestones complete on `>=` instead of
+  exact equality. Covered by `tests/shop-and-tree.test.js`.
+- **Mission catalog endpoints**: role lookups parallelized
+  (`/students/tasks-category`, `/students/appear-Taskes-Type/:id`); client adds
+  15s request timeouts so a hanging request shows retry UI instead of an
+  endless spinner. NOTE: intermittent "missions don't load" in production is
+  most plausibly ERR-001 (DB connection refused) — still open below.
+- **Client shop popup**: only a real insufficient-balance 400 opens the
+  "رصيد غير كافي" popup (other errors show a toast); the missing-sanabel list
+  is computed per color (was pooled, often rendering an empty list) and
+  prefers the server's `missing` payload. Unit tested in
+  `client/src/utils/shopMath.test.ts`.
+- **UI/i18n**: profile tree tab shows "Stage 1" (was "1 Stage"); missing
+  English translations added (prayer-notifications toggle + alerts,
+  notifications sort/empty states, shop errors); sanabel totals on the green
+  progress bar are now white.
+- **server/.env**: VAPID lines were corrupted (wrong encoding) and unparseable
+  by dotenv; rewritten as valid UTF-8 (relates to ERR-011).
+
 ## P0 — Do First
 
 ### [ ] ERR-001 — Restore and verify database connectivity

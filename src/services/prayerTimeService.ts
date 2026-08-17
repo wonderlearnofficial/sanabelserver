@@ -9,6 +9,12 @@ if (process.env.NODE_ENV !== "production") {
   dotenv.config();
 }
 
+// True once VAPID details are configured; guards every push send/schedule so
+// a disabled deployment never throws from web-push.
+let pushReady = false;
+
+export const isPushReady = () => pushReady;
+
 // Set up web-push VAPID details
 export const initWebPush = () => {
   const pushEnabled = process.env.PUSH_NOTIFICATIONS_ENABLED === "true";
@@ -28,35 +34,81 @@ export const initWebPush = () => {
   }
 
   webpush.setVapidDetails(vapidSubject, vapidPublicKey, vapidPrivateKey);
+  pushReady = true;
   return true;
 };
 
+const userJobPrefix = (userId: number | string) => `prayer_${userId}_`;
+
+// Cancel every scheduled prayer job belonging to one user (used before
+// rescheduling and when the user unsubscribes).
+export const cancelPrayersForUser = (userId: number | string) => {
+  const prefix = userJobPrefix(userId);
+  let cancelled = 0;
+  for (const jobName of Object.keys(schedule.scheduledJobs)) {
+    if (jobName.startsWith(prefix)) {
+      schedule.scheduledJobs[jobName].cancel();
+      cancelled += 1;
+    }
+  }
+  if (cancelled > 0) {
+    logger.info(`Cancelled ${cancelled} scheduled prayer jobs`, { userId });
+  }
+};
+
 // Send a push notification
-export const sendPrayerNotification = async (subscription: any, prayerName: string) => {
+export const sendPrayerNotification = async (
+  subscription: any,
+  prayerName: string,
+  userId?: number,
+) => {
+  if (!pushReady) return;
+
   const payload = JSON.stringify({
     title: `حان وقت صلاة ${prayerName}`,
     body: "لا تنس ذكر الله وإقامة الصلاة في وقتها.",
-    icon: "/assets/snabel-logo.png", // Ensure you have this or similar in frontend
+    icon: "/icons/icon-192.webp",
   });
 
   try {
     await webpush.sendNotification(subscription, payload);
-    logger.info(`Prayer notification (${prayerName}) sent successfully`);
-  } catch (error) {
-    logger.error("Failed to send push notification", { error });
+    logger.info(`Prayer notification (${prayerName}) sent successfully`, { userId });
+  } catch (error: any) {
+    logger.error("Failed to send push notification", { error, userId });
+    // 404/410 mean the browser subscription no longer exists — drop it so we
+    // stop scheduling sends into the void every day.
+    const statusCode = error?.statusCode;
+    if (userId && (statusCode === 404 || statusCode === 410)) {
+      cancelPrayersForUser(userId);
+      await User.update(
+        { pushSubscription: null },
+        { where: { id: userId } },
+      ).catch((cleanupError) =>
+        logger.error("Failed to clear expired push subscription", {
+          error: cleanupError,
+          userId,
+        }),
+      );
+    }
   }
 };
 
-// Calculate and schedule prayers for a specific user for the given date
-const schedulePrayersForUser = (user: User, date: Date) => {
+// Calculate and schedule prayers for a specific user for the given date.
+// Also called right after a user subscribes, so their notifications start
+// today instead of after the next midnight run/restart.
+export const schedulePrayersForUser = (user: User, date: Date) => {
+  if (!pushReady) return;
   if (!user.pushSubscription || !user.location) return;
 
   const loc = user.location as any;
   if (!loc.latitude || !loc.longitude) return;
 
+  // Re-subscribing must not double-schedule
+  cancelPrayersForUser(user.id);
+
   const coordinates = new Coordinates(loc.latitude, loc.longitude);
   const params = CalculationMethod.MuslimWorldLeague();
-  
+
   const prayerTimes = new PrayerTimes(coordinates, date, params);
 
   const prayers = [
@@ -68,14 +120,25 @@ const schedulePrayersForUser = (user: User, date: Date) => {
   ];
 
   const now = new Date();
+  let scheduled = 0;
 
   prayers.forEach((prayer) => {
     // Only schedule if the prayer time is in the future
     if (prayer.time > now) {
-      schedule.scheduleJob(`prayer_${user.id}_${prayer.name}_${prayer.time.getTime()}`, prayer.time, () => {
-        sendPrayerNotification(user.pushSubscription, prayer.name);
-      });
+      schedule.scheduleJob(
+        `${userJobPrefix(user.id)}${prayer.name}_${prayer.time.getTime()}`,
+        prayer.time,
+        () => {
+          sendPrayerNotification(user.pushSubscription, prayer.name, user.id);
+        },
+      );
+      scheduled += 1;
     }
+  });
+
+  logger.info(`Scheduled ${scheduled} prayer notifications`, {
+    userId: user.id,
+    date: date.toISOString().split("T")[0],
   });
 };
 

@@ -27,6 +27,11 @@ import Parent from "../models/parent.model";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
 import { getImportField } from "../helpers/importFieldLookup";
 import { buildCategoryCounts } from "../helpers/taskCategoryStats";
+import {
+  computeSanabelCostPerColor,
+  computeMissingSanabel,
+  hasSufficientSanabel,
+} from "../helpers/shopPricing";
 
 declare global {
   namespace Express {
@@ -203,9 +208,11 @@ const appearTaskesType = async (req: Request, res: Response) => {
         .json({ message: "User data not found in request" });
     }
 
-    const student = await Student.findOne({ where: { userId: user.id } });
-    const teacher = await Teacher.findOne({ where: { userId: user.id } });
-    const parent = await Parent.findOne({ where: { userId: user.id } });
+    const [student, teacher, parent] = await Promise.all([
+      Student.findOne({ where: { userId: user.id } }),
+      Teacher.findOne({ where: { userId: user.id } }),
+      Parent.findOne({ where: { userId: user.id } }),
+    ]);
 
     if (!student && !teacher && !parent) {
       return res
@@ -335,9 +342,11 @@ const appearTaskesCategory = async (req: Request, res: Response) => {
         .json({ message: "User data not found in request" });
     }
 
-    const student = await Student.findOne({ where: { userId: user.id } });
-    const teacher = await Teacher.findOne({ where: { userId: user.id } });
-    const parent = await Parent.findOne({ where: { userId: user.id } });
+    const [student, teacher, parent] = await Promise.all([
+      Student.findOne({ where: { userId: user.id } }),
+      Teacher.findOne({ where: { userId: user.id } }),
+      Parent.findOne({ where: { userId: user.id } }),
+    ]);
 
     if (!student && !teacher && !parent) {
       return res
@@ -1016,120 +1025,97 @@ const buyWaterSeeder = async (req: Request, res: Response) => {
     if (!user)
       return res.status(401).json({ message: "User not authenticated" });
 
-    const student = await Student.findOne({ where: { userId: user.id } });
-    if (!student) return res.status(404).json({ message: "Student not found" });
-
     logger.info("buyWaterSeeder request body:", req.body);
     const water = Number(req.body.water) || 0;
     const seeders = Number(req.body.seeders) || 0;
 
-    if (water <= 0 && seeders <= 0) {
+    if (!Number.isInteger(water) || !Number.isInteger(seeders) || water < 0 || seeders < 0) {
+      logger.warn("buyWaterSeeder returning 400: invalid quantities", { water, seeders });
+      return res.status(400).json({ error: "Invalid water or seeders quantity" });
+    }
+
+    if (water === 0 && seeders === 0) {
       logger.warn("buyWaterSeeder returning 400: Add some seeders or water first", { water, seeders });
       return res.status(400).json({ error: "Add some seeders or water first" });
     }
 
-    // Must match the client's per-unit pricing in Shop.tsx (waterCost/fertilizerCost),
-    // which discounts the first tree stage — otherwise the amount charged here
-    // silently diverges from what the confirmation popup showed the student.
-    const waterCost = student.treeProgress === 1 ? 10 : 20;
-    const seederCost = student.treeProgress === 1 ? 15 : 30;
-    const totalRed = waterCost * water + seederCost * seeders;
-    const totalBlue = totalRed;
-    const totalYellow = totalRed;
+    const student = await Student.findOne({ where: { userId: user.id } });
+    if (!student) return res.status(404).json({ message: "Student not found" });
 
-    logger.info("buyWaterSeeder balance check:", { 
-      studentBalances: {
-        snabelRed: student.snabelRed,
-        snabelBlue: student.snabelBlue,
-        snabelYellow: student.snabelYellow
-      },
-      requiredBalances: {
-        totalRed,
-        totalBlue,
-        totalYellow
+    const totalPerColor = computeSanabelCostPerColor(
+      water,
+      seeders,
+      student.treeProgress,
+    );
+    const available = {
+      snabelRed: student.snabelRed,
+      snabelBlue: student.snabelBlue,
+      snabelYellow: student.snabelYellow,
+    };
+    const required = {
+      snabelRed: totalPerColor,
+      snabelBlue: totalPerColor,
+      snabelYellow: totalPerColor,
+    };
+
+    logger.info("buyWaterSeeder balance check:", { available, required });
+
+    if (!hasSufficientSanabel(totalPerColor, available)) {
+      const missing = computeMissingSanabel(totalPerColor, available);
+      logger.warn("buyWaterSeeder returning 400: Insufficient snabel balance", {
+        required,
+        available,
+        missing,
+      });
+      // The client renders `missing` directly in the insufficient-funds popup,
+      // so the amounts shown always match what this endpoint actually charges.
+      return res.status(400).json({
+        error: "Insufficient snabel balance",
+        required,
+        available,
+        missing,
+      });
+    }
+
+    // Water/seeder challenge progress is a side effect of the purchase — a
+    // student with no such challenge rows must still be able to buy.
+    const purchases = [
+      { category: "water", amount: water },
+      { category: "seeder", amount: seeders },
+    ].filter((p) => p.amount > 0);
+
+    await Student.sequelize.transaction(async (t) => {
+      for (const { category, amount } of purchases) {
+        const challengeRows = await StudentChallenge.findAll({
+          where: { studentId: student.id, completionStatus: "NotCompleted" },
+          include: [{ model: Challenge, as: "challenge", where: { category } }],
+          transaction: t,
+        });
+
+        for (const row of challengeRows) {
+          const newPoints = row.pointOfStudent + amount;
+          row.pointOfStudent = newPoints;
+          if (row.challenge && newPoints >= row.challenge.point) {
+            row.completionStatus = "Completed" as any;
+            student.xp = (student.xp || 0) + (row.challenge.xp || 0);
+            student.snabelRed = (student.snabelRed || 0) + (row.challenge.snabelRed || 0);
+            student.snabelBlue = (student.snabelBlue || 0) + (row.challenge.snabelBlue || 0);
+            student.snabelYellow = (student.snabelYellow || 0) + (row.challenge.snabelYellow || 0);
+            student.water = (student.water || 0) + (row.challenge.water || 0);
+            student.seeders = (student.seeders || 0) + (row.challenge.seeder || 0);
+          }
+          await row.save({ transaction: t });
+        }
       }
+
+      student.snabelRed -= totalPerColor;
+      student.snabelBlue -= totalPerColor;
+      student.snabelYellow -= totalPerColor;
+      student.water += water;
+      student.seeders += seeders;
+
+      await student.save({ transaction: t });
     });
-
-    if (
-      student.snabelRed < totalRed ||
-      student.snabelBlue < totalBlue ||
-      student.snabelYellow < totalYellow
-    ) {
-      logger.warn("buyWaterSeeder returning 400: Insufficient snabel balance");
-      return res.status(400).json({ error: "Insufficient snabel balance" });
-    }
-
-    // update the challagange of water
-    if (water) {
-      const water_challanges = await StudentChallenge.findAll({
-        where: { studentId: student.id },
-        include: [
-          { model: Challenge, as: "challenge", where: { Category: "water" } },
-        ],
-      });
-      if (water_challanges.length === 0) {
-        return res.status(404).json({ message: "No water challenge found" });
-      }
-
-      for (const water_challange of water_challanges) {
-        if (water_challange.completionStatus === "NotCompleted") {
-          await water_challange.update({
-            pointOfStudent: water_challange.pointOfStudent + water,
-          });
-          if (
-            water_challange.challenge &&
-            water_challange.pointOfStudent + water >=
-              water_challange.challenge.point
-          ) {
-            await water_challange.update({ completionStatus: "Completed" });
-            await student.update({
-              water: student.water + water_challange.challenge.water,
-            });
-          }
-          await student.save();
-          await water_challange.save(); // Save updates
-        }
-      }
-    }
-    if (seeders) {
-      const seeder_challanges = await StudentChallenge.findAll({
-        where: { studentId: student.id },
-        include: [
-          { model: Challenge, as: "challenge", where: { Category: "seeder" } },
-        ],
-      });
-      if (seeder_challanges.length === 0) {
-        return res.status(404).json({ message: "No water challenge found" });
-      }
-
-      for (const seeder_challange of seeder_challanges) {
-        if (seeder_challange.completionStatus === "NotCompleted") {
-          await seeder_challange.update({
-            pointOfStudent: seeder_challange.pointOfStudent + seeders,
-          });
-          if (
-            seeder_challange.challenge &&
-            seeder_challange.pointOfStudent + seeders >=
-              seeder_challange.challenge.point
-          ) {
-            await seeder_challange.update({ completionStatus: "Completed" });
-            await student.update({
-              seeders: student.seeders + seeder_challange.challenge.seeder,
-            });
-          }
-          await seeder_challange.save(); // Save updates
-          await student.save();
-        }
-      }
-    }
-    student.snabelRed -= totalRed;
-    student.snabelBlue -= totalBlue;
-    student.snabelYellow -= totalYellow;
-
-    student.water += water;
-    student.seeders += seeders;
-
-    await student.save(); // Save updates
 
     res.json({ message: "Updated successfully", student });
   } catch (error) {
@@ -1177,9 +1163,9 @@ const growTheTree = async (req: Request, res: Response) => {
       treeProgress: student.treeProgress + 1,
     });
 
-    // Fetch all student challenges
+    // Fetch all open student challenges
     const studentChallenges = await StudentChallenge.findAll({
-      where: { studentId: student.id },
+      where: { studentId: student.id, completionStatus: "NotCompleted" },
       include: [{ model: Challenge, as: "challenge" }],
     });
 
@@ -1190,55 +1176,52 @@ const growTheTree = async (req: Request, res: Response) => {
       (ch) => ch.challenge?.category === "treestage"
     );
 
-    // Process tree level challenges
-    const challengeUpdates = treeLevelChallenges.map(async (treeChallenge) => {
-      if (treeChallenge.completionStatus === "NotCompleted") {
+    // The new tree row the student just advanced to; drives stage challenges.
+    const nextTreeLevel =
+      student.treeProgress <= maxTreeLevel
+        ? await Tree.findByPk(student.treeProgress)
+        : null;
+
+    await Student.sequelize.transaction(async (t) => {
+      for (const treeChallenge of treeLevelChallenges) {
         const newPoints = treeChallenge.pointOfStudent + 1;
-        await treeChallenge.update({ pointOfStudent: newPoints });
+        treeChallenge.pointOfStudent = newPoints;
 
         if (
           treeChallenge.challenge &&
           newPoints >= treeChallenge.challenge.point
         ) {
-          await treeChallenge.update({ completionStatus: "Completed" });
+          treeChallenge.completionStatus = "Completed" as any;
           student.snabelRed += treeChallenge.challenge.snabelRed;
           student.snabelBlue += treeChallenge.challenge.snabelBlue;
           student.snabelYellow += treeChallenge.challenge.snabelYellow;
           student.xp += treeChallenge.challenge.xp;
         }
+        await treeChallenge.save({ transaction: t });
       }
-    });
 
-    // Fetch next tree level only if needed
-    if (student.treeProgress <= maxTreeLevel) {
-      const treeLevelForChallenge = await Tree.findByPk(student.treeProgress);
-      if (!treeLevelForChallenge)
-        return res.status(404).json({ message: "Tree data not found" });
+      if (nextTreeLevel) {
+        for (const treeChallenge of treeStageChallenges) {
+          treeChallenge.pointOfStudent = nextTreeLevel.stage;
 
-      // Process tree stage challenges
-      treeStageChallenges.forEach(async (treeChallenge) => {
-        if (treeChallenge.completionStatus === "NotCompleted") {
-          await treeChallenge.update({
-            pointOfStudent: treeLevelForChallenge.stage,
-          });
-
+          // ">=" not "===": if a stage milestone is ever skipped over, the
+          // challenge must still complete instead of being stuck forever.
           if (
             treeChallenge.challenge &&
-            treeLevelForChallenge.stage === treeChallenge.challenge.point
+            nextTreeLevel.stage >= treeChallenge.challenge.point
           ) {
-            await treeChallenge.update({ completionStatus: "Completed" });
+            treeChallenge.completionStatus = "Completed" as any;
             student.snabelRed += treeChallenge.challenge.snabelRed;
             student.snabelBlue += treeChallenge.challenge.snabelBlue;
             student.snabelYellow += treeChallenge.challenge.snabelYellow;
             student.xp += treeChallenge.challenge.xp;
           }
+          await treeChallenge.save({ transaction: t });
         }
-      });
-    }
+      }
 
-    // Execute updates in parallel
-    await Promise.all(challengeUpdates);
-    await student.save();
+      await student.save({ transaction: t });
+    });
 
     return res
       .status(200)

@@ -404,3 +404,14 @@ router.patch("/seen-guides", authenticateToken, userController.markGuideSeen);
  *                 type: object
  */
 router.post("/subscribe-push", authenticateToken, userController.subscribePushNotification);
+
+/**
+ * @swagger
+ * /users/unsubscribe-push:
+ *   post:
+ *     summary: Unsubscribe from push notifications and cancel scheduled prayer jobs
+ *     tags: [User]
+ *     security:
+ *       - BearerAuth: []
+ */
+router.post("/unsubscribe-push", authenticateToken, userController.unsubscribePushNotification);
