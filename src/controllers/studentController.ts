@@ -14,7 +14,7 @@ import Class from "../models/class.model";
 import Grade from "../models/grade.model";
 import { generatePassword, generateSixDigitPassword } from "../helpers/generatePassword";
 import { sendEmail } from "../helpers/sendEmail";
-import { buildAccountCreatedEmail, LOGO_ATTACHMENTS, getAppUrl } from "../helpers/emailTemplates";
+import { buildAccountCreatedEmail, getEmailAttachments, getAppUrl } from "../helpers/emailTemplates";
 import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
@@ -1375,7 +1375,7 @@ const addStudent = async (req: Request, res: Response) => {
                 password,
                 roleLabel: "student",
               }),
-              attachments: LOGO_ATTACHMENTS,
+              attachments: getEmailAttachments(),
             });
             emailSent = true;
           } catch (emailError) {

@@ -19,7 +19,7 @@ import Organization from "../models/oraganization.model";
 import StudentChallenge, { CompletionStatus } from "../models/student-challenge.model";
 import bcrypt from "bcryptjs";
 import { sendEmail } from "../helpers/sendEmail";
-import { buildAccountCreatedEmail, LOGO_ATTACHMENTS, getAppUrl } from "../helpers/emailTemplates";
+import { buildAccountCreatedEmail, getEmailAttachments, getAppUrl } from "../helpers/emailTemplates";
 import { getImportField } from "../helpers/importFieldLookup";
 import { generateSixDigitPassword } from "../helpers/generatePassword";
 import { buildCategoryCounts } from "../helpers/taskCategoryStats";
@@ -695,7 +695,7 @@ const addParent = async (req: Request, res: Response) => {
               subject: "Your account in Snabel elahssan",
               text: `Your email is ${email}, and your password is ${password}. Log in at ${getAppUrl()}`,
               html: buildAccountCreatedEmail({ firstName, email, password, roleLabel: "parent" }),
-              attachments: LOGO_ATTACHMENTS,
+              attachments: getEmailAttachments(),
             });
             emailSent = true;
           } catch (emailError) {

@@ -1,11 +1,14 @@
 /**
- * Returns a fully self-contained, responsive HTML email for OTP delivery.
- * Logos are referenced via cid: (MIME inline attachment) rather than a
- * data: URI or public image URL — Gmail (web + app) strips <img src="data:...">
- * entirely, and a public-URL logo silently breaks if BASE_URL ever points
- * somewhere unreachable. cid: attachments are the one technique every major
- * mail client (Gmail included) actually renders. Callers must pass
- * LOGO_ATTACHMENTS through to sendEmail()'s `attachments` option.
+ * Responsive HTML emails for OTP delivery and account creation.
+ *
+ * Logo strategy: when BASE_URL is set (always, in practice), logos are plain
+ * hosted <img> URLs served from this API's /assets route — Gmail proxies and
+ * renders those reliably, and they survive the Resend HTTP API, which does
+ * not deliver cid: inline attachments the way SMTP does (that was the "logo
+ * shows as alt text" bug). cid: MIME attachments remain only as a fallback
+ * for environments without BASE_URL; callers must pass getEmailAttachments()
+ * through to sendEmail()'s `attachments` option so the fallback stays wired.
+ * data: URIs are never used — Gmail strips them entirely.
  */
 
 import path from "path";
@@ -15,6 +18,27 @@ export const WONDERLEARN_LOGO_CID = "wonderlearn-logo";
 
 export function getAppUrl(): string {
   return process.env.CLIENT_APP_URL || "https://sanabel-tau.vercel.app";
+}
+
+// Hosted-URL image sources when BASE_URL is available, cid: otherwise.
+export function getEmailImageSources() {
+  const baseUrl = (process.env.BASE_URL || "").replace(/\/+$/, "");
+  if (baseUrl) {
+    return {
+      sanabelSrc: `${baseUrl}/assets/splash-email.png`,
+      wonderlearnSrc: `${baseUrl}/assets/wonderlearn-email.png`,
+    };
+  }
+  return {
+    sanabelSrc: `cid:${SANABEL_LOGO_CID}`,
+    wonderlearnSrc: `cid:${WONDERLEARN_LOGO_CID}`,
+  };
+}
+
+// Attachments are only needed for the cid: fallback; attaching them alongside
+// hosted URLs would show meaningless paperclip attachments in mail clients.
+export function getEmailAttachments() {
+  return process.env.BASE_URL ? [] : LOGO_ATTACHMENTS;
 }
 
 // Small, pre-resized copies (~30KB/~15KB) — see assets/splash-email.png and
@@ -36,8 +60,8 @@ export const LOGO_ATTACHMENTS = [
 export function buildOtpEmail(otp: string): string {
   const digits = otp.split(""); // e.g. ['1','2','3','4']
 
-  const sanabelUri = `cid:${SANABEL_LOGO_CID}`;
-  const wonderlearnUri = `cid:${WONDERLEARN_LOGO_CID}`;
+  const { sanabelSrc: sanabelUri, wonderlearnSrc: wonderlearnUri } =
+    getEmailImageSources();
 
   const digitBoxes = digits
     .map(
@@ -251,8 +275,8 @@ export function buildAccountCreatedEmail(params: {
   roleLabel: string; // e.g. "student" or "teacher"
 }): string {
   const { firstName, email, password, roleLabel } = params;
-  const sanabelUri = `cid:${SANABEL_LOGO_CID}`;
-  const wonderlearnUri = `cid:${WONDERLEARN_LOGO_CID}`;
+  const { sanabelSrc: sanabelUri, wonderlearnSrc: wonderlearnUri } =
+    getEmailImageSources();
   const appUrl = getAppUrl();
 
   return `<!DOCTYPE html>

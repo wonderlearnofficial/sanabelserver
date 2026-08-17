@@ -7,7 +7,7 @@ import generateOTP, {
   OTP_LENGTH,
 } from "../helpers/generateOtp";
 import { EmailDeliveryError, sendEmail } from "../helpers/sendEmail";
-import { buildOtpEmail, LOGO_ATTACHMENTS } from "../helpers/emailTemplates";
+import { buildOtpEmail, getEmailAttachments } from "../helpers/emailTemplates";
 import {
   isOtpLocked,
   recordOtpFailure,
@@ -57,7 +57,7 @@ const sendOtp = async (req: Request, res: Response) => {
         subject: "Your OTP Code – Sanabel Al-Ihsan",
         text: `Your OTP code is ${otp}. It is valid for 5 minutes.`,
         html: buildOtpEmail(otp),
-        attachments: LOGO_ATTACHMENTS,
+        attachments: getEmailAttachments(),
       });
 
       return res.status(200).json({
@@ -78,7 +78,7 @@ const sendOtp = async (req: Request, res: Response) => {
       subject: "Your OTP Code – Sanabel Al-Ihsan",
       text: `Your OTP code is ${otp}. It is valid for 5 minutes.`,
       html: buildOtpEmail(otp),
-      attachments: LOGO_ATTACHMENTS,
+      attachments: getEmailAttachments(),
     });
 
     return res.status(200).json({

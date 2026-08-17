@@ -23,7 +23,7 @@ import bcrypt from "bcryptjs";
 import path from "path";
 import fs from "fs";
 import { sendEmail } from "../helpers/sendEmail";
-import { buildAccountCreatedEmail, LOGO_ATTACHMENTS, getAppUrl } from "../helpers/emailTemplates";
+import { buildAccountCreatedEmail, getEmailAttachments, getAppUrl } from "../helpers/emailTemplates";
 import { generatePassword, generateSixDigitPassword } from "../helpers/generatePassword";
 import { getImportField } from "../helpers/importFieldLookup";
 import { buildCategoryCounts } from "../helpers/taskCategoryStats";
@@ -890,7 +890,7 @@ const addTeacher = async (req: Request, res: Response) => {
                 password,
                 roleLabel: "teacher",
               }),
-              attachments: LOGO_ATTACHMENTS,
+              attachments: getEmailAttachments(),
             });
             emailSent = true;
           } catch (emailError) {
