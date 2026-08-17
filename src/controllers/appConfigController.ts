@@ -11,10 +11,19 @@ export const getAppVersion = async (req: Request, res: Response): Promise<void> 
     const rawPlatform = ((req.query.platform as string) || "android").toLowerCase();
     const platform = rawPlatform.includes("ios") ? "ios" : "android";
 
-    const [platformConfig, globalConfig] = await Promise.all([
-      AppConfig.findOne({ where: { platform } }),
-      AppConfig.findOne({ where: { platform: "global" } }),
-    ]);
+    let platformConfig: AppConfig | null = null;
+    let globalConfig: AppConfig | null = null;
+
+    try {
+      [platformConfig, globalConfig] = await Promise.all([
+        AppConfig.findOne({ where: { platform } }),
+        AppConfig.findOne({ where: { platform: "global" } }),
+      ]);
+    } catch (dbErr: any) {
+      logger.warn("AppConfig table query warning (falling back to baseline defaults):", {
+        error: dbErr?.message,
+      });
+    }
 
     const isGlobalMaintenance = globalConfig?.maintenanceMode ?? false;
 
@@ -22,13 +31,16 @@ export const getAppVersion = async (req: Request, res: Response): Promise<void> 
       res.status(200).json({
         success: true,
         platform,
-        latestVersion: "1.0.0",
+        latestVersion: "1.2.6",
         minRequiredVersion: "1.0.0",
         forceUpdate: false,
-        storeUrl: "",
+        storeUrl:
+          platform === "android"
+            ? "https://play.google.com/store/apps/details?id=com.wonderlearn.sanabel"
+            : "",
         releaseNotes: {
-          ar: "تحديث جديد متوفر.",
-          en: "A new update is available.",
+          ar: "تحديث جديد يتضمن تحسينات عامة وإصلاحات في الأداء.",
+          en: "New update including general improvements and bug fixes.",
         },
         maintenanceMode: isGlobalMaintenance,
       });
@@ -43,16 +55,25 @@ export const getAppVersion = async (req: Request, res: Response): Promise<void> 
       forceUpdate: Boolean(platformConfig.forceUpdate),
       storeUrl: platformConfig.storeUrl,
       releaseNotes: {
-        ar: platformConfig.releaseNotesAr || "تحديث جديد متوفر.",
-        en: platformConfig.releaseNotesEn || "A new update is available.",
+        ar: platformConfig.releaseNotesAr || "تحديث جديد يتضمن تحسينات عامة.",
+        en: platformConfig.releaseNotesEn || "New update with performance improvements.",
       },
       maintenanceMode: Boolean(platformConfig.maintenanceMode || isGlobalMaintenance),
     });
   } catch (error: any) {
-    logger.error("Error fetching app version config:", { error: error?.message });
-    res.status(500).json({
-      success: false,
-      message: "Failed to retrieve app version information",
+    logger.error("Error in getAppVersion controller:", { error: error?.message });
+    res.status(200).json({
+      success: true,
+      platform: "android",
+      latestVersion: "1.2.6",
+      minRequiredVersion: "1.0.0",
+      forceUpdate: false,
+      storeUrl: "https://play.google.com/store/apps/details?id=com.wonderlearn.sanabel",
+      releaseNotes: {
+        ar: "تحديث جديد يتضمن تحسينات عامة.",
+        en: "New update with performance improvements.",
+      },
+      maintenanceMode: false,
     });
   }
 };

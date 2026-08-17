@@ -264,6 +264,9 @@ const seedTrees = async () => {
 
 const seedDefaultAppConfigs = async () => {
   try {
+    // Ensure table exists on production databases even when global sync is disabled
+    await AppConfig.sync();
+
     const defaultConfigs = [
       {
         platform: "android",
