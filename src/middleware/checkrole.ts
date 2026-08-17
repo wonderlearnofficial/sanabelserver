@@ -82,6 +82,22 @@ const checkAdmin = async (
     return res.status(401).json({ message: "User data not found in request" });
   }
 
+  // Resolve the acting admin's organization scope for this request.
+  // null organizationId = super admin (sees everything); a value locks every
+  // /admin endpoint to that school. Looked up per request (not stored in the
+  // JWT) so scope changes take effect without re-login.
+  if (user.role === "Admin") {
+    const adminRecord = await User.findByPk(user.id, {
+      attributes: ["id", "organizationId"],
+    });
+    if (!adminRecord) {
+      logger.warn("Admin token for a user that no longer exists", { userId: user.id });
+      return res.status(401).json({ message: "User data not found in request" });
+    }
+    (req as Request & { adminOrganizationId?: number | null }).adminOrganizationId =
+      adminRecord.organizationId ?? null;
+  }
+
   if (user.role == "Admin") {
     (req as Request & { user?: JwtPayload }).user = user as JwtPayload;
     next();

@@ -46,6 +46,9 @@ class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
   declare seenGuides: CreationOptional<string[]>;
   declare pushSubscription: CreationOptional<Record<string, any> | null>;
   declare location: CreationOptional<Record<string, any> | null>;
+  // Admin scope: null = super admin (sees everything); a value locks the
+  // admin to that organization's data. Ignored for non-Admin roles.
+  declare organizationId: CreationOptional<number | null>;
   static associate(models: any) {
     User.hasMany(Student, { foreignKey: "userId", as: "Students" });
     User.hasMany(Teacher, { foreignKey: "userId", as: "Teachers" });
@@ -144,6 +147,13 @@ class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
         location: {
           type: DataTypes.JSON,
           allowNull: true,
+        },
+        organizationId: {
+          // No DB-level FK on purpose — see the add-user-organization-scope
+          // migration; scope integrity is enforced in the admin controller.
+          type: DataTypes.INTEGER,
+          allowNull: true,
+          defaultValue: null,
         },
       },
       {

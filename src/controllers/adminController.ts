@@ -29,6 +29,52 @@ import { buildCategoryCounts } from "../helpers/taskCategoryStats";
 
 const DEFAULT_RESET_PASSWORD = "changeme123";
 
+// ---------------------------------------------------------------------------
+// Organization scope (school-scoped admins)
+// ---------------------------------------------------------------------------
+
+// Set by the checkAdmin middleware: null = super admin (sees everything);
+// a number locks this request to that organization's data.
+const getAdminScope = (req: Request): number | null =>
+  (req as Request & { adminOrganizationId?: number | null })
+    .adminOrganizationId ?? null;
+
+// Whether a target user belongs to the acting admin's school. Admin users
+// are never in a school scope — scoped admins cannot see or manage them.
+const isUserInAdminScope = async (
+  userRecord: User,
+  scope: number,
+  transaction?: any,
+): Promise<boolean> => {
+  if (userRecord.role === "Student") {
+    const count = await Student.count({
+      where: { userId: userRecord.id, organizationId: scope },
+      transaction,
+    });
+    return count > 0;
+  }
+  if (userRecord.role === "Teacher") {
+    const count = await Teacher.count({
+      where: { userId: userRecord.id, organizationId: scope },
+      transaction,
+    });
+    return count > 0;
+  }
+  if (userRecord.role === "Parent") {
+    const parent = await Parent.findOne({
+      where: { userId: userRecord.id },
+      transaction,
+    });
+    if (!parent) return false;
+    const count = await Student.count({
+      where: { ParentId: parent.id, organizationId: scope } as any,
+      transaction,
+    });
+    return count > 0;
+  }
+  return false;
+};
+
 const getAdminProfile = async (req: Request, res: Response) => {
   const user = (req as Request & { user: JwtPayload | undefined }).user;
   if (!user) {
@@ -38,7 +84,9 @@ const getAdminProfile = async (req: Request, res: Response) => {
   try {
     const admin = await User.findOne({
       where: { id: user.id, role: "Admin" },
-      attributes: ["id", "firstName", "lastName", "email", "role", "seenGuides"],
+      // organizationId tells the client whether this is a school-scoped
+      // admin (a value) or a super admin (null)
+      attributes: ["id", "firstName", "lastName", "email", "role", "seenGuides", "organizationId"],
     });
 
     if (!admin) {
@@ -48,6 +96,57 @@ const getAdminProfile = async (req: Request, res: Response) => {
     return res.status(200).json({ data: admin });
   } catch (error) {
     logger.error("Error in getAdminProfile:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// Dashboard counters in one round trip — the admin UI previously issued four
+// limit=1 list requests just to read totals.
+const getAdminStats = async (req: Request, res: Response) => {
+  try {
+    const scope = getAdminScope(req);
+
+    if (scope !== null) {
+      // School admin: everything counted within their organization only
+      const [students, teachers, classes, parentLinks] = await Promise.all([
+        Student.count({ where: { organizationId: scope } }),
+        Teacher.count({ where: { organizationId: scope } }),
+        Class.count({ where: { organizationId: scope } }),
+        Student.findAll({
+          where: { organizationId: scope, ParentId: { [Op.ne]: null } } as any,
+          attributes: ["ParentId"],
+          raw: true,
+        }),
+      ]);
+      const parents = new Set(parentLinks.map((r: any) => r.ParentId)).size;
+
+      return res.status(200).json({
+        data: {
+          users: students + teachers + parents,
+          students,
+          teachers,
+          parents,
+          organizations: 1,
+          classes,
+        },
+      });
+    }
+
+    const [users, students, teachers, parents, organizations, classes] =
+      await Promise.all([
+        User.count(),
+        Student.count(),
+        Teacher.count(),
+        Parent.count(),
+        Organization.count(),
+        Class.count(),
+      ]);
+
+    return res.status(200).json({
+      data: { users, students, teachers, parents, organizations, classes },
+    });
+  } catch (error) {
+    logger.error("Error in getAdminStats:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -63,6 +162,10 @@ const listOrganizations = async (req: Request, res: Response) => {
     const where: any = {};
     if (search) where.name = { [Op.like]: `%${String(search)}%` };
     if (type) where.type = type;
+
+    // School admins only ever see their own school
+    const scope = getAdminScope(req);
+    if (scope !== null) where.id = scope;
 
     const pageNum = Number(page) || 1;
     const limitNum = Number(limit) || 20;
@@ -92,6 +195,11 @@ const getOrganization = async (req: Request, res: Response) => {
     const organizationId = Number(req.params.organizationId);
     if (!organizationId) {
       return res.status(400).json({ message: "Invalid organization id" });
+    }
+
+    const scope = getAdminScope(req);
+    if (scope !== null && organizationId !== scope) {
+      return res.status(404).json({ message: "Organization not found" });
     }
 
     const organization = await Organization.findByPk(organizationId, {
@@ -126,6 +234,12 @@ const getOrganization = async (req: Request, res: Response) => {
 
 const createOrganization = async (req: Request, res: Response) => {
   try {
+    if (getAdminScope(req) !== null) {
+      return res
+        .status(403)
+        .json({ message: "School admins cannot create organizations" });
+    }
+
     const { name, type, img } = req.body;
 
     if (!name || typeof name !== "string") {
@@ -154,6 +268,12 @@ const createOrganization = async (req: Request, res: Response) => {
 
 const updateOrganization = async (req: Request, res: Response) => {
   try {
+    if (getAdminScope(req) !== null) {
+      return res
+        .status(403)
+        .json({ message: "School admins cannot modify organizations" });
+    }
+
     const organizationId = Number(req.params.organizationId);
     if (!organizationId) {
       return res.status(400).json({ message: "Invalid organization id" });
@@ -184,6 +304,12 @@ const updateOrganization = async (req: Request, res: Response) => {
 
 const deleteOrganization = async (req: Request, res: Response) => {
   try {
+    if (getAdminScope(req) !== null) {
+      return res
+        .status(403)
+        .json({ message: "School admins cannot modify organizations" });
+    }
+
     const organizationId = Number(req.params.organizationId);
     if (!organizationId) {
       return res.status(400).json({ message: "Invalid organization id" });
@@ -239,6 +365,10 @@ const listStudents = async (req: Request, res: Response) => {
     if (classId) where.classId = classId;
     if (gradeId) where.gradeId = gradeId;
     else if (grade) where.grade = grade;
+
+    // School admins are locked to their own school regardless of query params
+    const scope = getAdminScope(req);
+    if (scope !== null) where.organizationId = scope;
 
     const userWhere: any = {};
     if (search) {
@@ -356,6 +486,11 @@ const getStudentDetail = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Student not found" });
     }
 
+    const scope = getAdminScope(req);
+    if (scope !== null && student.organizationId !== scope) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
     const allCategories = await TaskCategory.findAll({
       attributes: ["id", "title"],
       raw: true,
@@ -425,6 +560,19 @@ const updateStudent = async (req: Request, res: Response) => {
         return res.status(404).json({ message: "Student not found" });
       }
 
+      const scope = getAdminScope(req);
+      if (scope !== null) {
+        if (student.organizationId !== scope) {
+          return res.status(404).json({ message: "Student not found" });
+        }
+        // A school admin can never move a student out of their school
+        if (requestedOrganizationId !== undefined && requestedOrganizationId !== scope) {
+          return res.status(403).json({
+            message: "School admins cannot move students to another organization",
+          });
+        }
+      }
+
       const userRecord = student.userId
         ? await User.findOne({ where: { id: student.userId }, transaction })
         : null;
@@ -484,7 +632,14 @@ const updateStudent = async (req: Request, res: Response) => {
         await userRecord.update(userUpdateData, { transaction });
       }
       if (Object.keys(studentUpdateData).length > 0) {
-        await student.update(studentUpdateData, { transaction });
+        await Student.update(studentUpdateData, {
+          where: { id: student.id },
+          transaction,
+          // Avoid Sequelize v7 alpha instance dirty-state dropping explicit
+          // null/empty relationship clears. The fields were normalized and
+          // relationship-validated above, and remain in this transaction.
+          fields: Object.keys(studentUpdateData),
+        });
       }
 
       return res.status(200).json({ message: "Student updated successfully" });
@@ -510,6 +665,11 @@ const deleteStudent = async (req: Request, res: Response) => {
 
     const student = await Student.findByPk(studentId);
     if (!student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    const scope = getAdminScope(req);
+    if (scope !== null && student.organizationId !== scope) {
       return res.status(404).json({ message: "Student not found" });
     }
 
@@ -549,6 +709,42 @@ const listUsers = async (req: Request, res: Response) => {
       ];
     }
 
+    // School admins only see users belonging to their school: its students
+    // and teachers, plus parents linked to its students. Admin accounts are
+    // never visible to them.
+    const scope = getAdminScope(req);
+    if (scope !== null) {
+      const [studentRows, teacherRows] = await Promise.all([
+        Student.findAll({
+          where: { organizationId: scope },
+          attributes: ["userId", "ParentId"],
+          raw: true,
+        }),
+        Teacher.findAll({
+          where: { organizationId: scope },
+          attributes: ["userId"],
+          raw: true,
+        }),
+      ]);
+      const parentIds = Array.from(
+        new Set(studentRows.map((r: any) => r.ParentId).filter(Boolean)),
+      );
+      const parentRows = parentIds.length
+        ? await Parent.findAll({
+            where: { id: parentIds },
+            attributes: ["userId"],
+            raw: true,
+          })
+        : [];
+      const scopedUserIds = [
+        ...studentRows.map((r: any) => r.userId),
+        ...teacherRows.map((r: any) => r.userId),
+        ...parentRows.map((r: any) => r.userId),
+      ].filter(Boolean);
+      // [0] keeps the IN clause valid when the school has no members yet
+      where.id = { [Op.in]: scopedUserIds.length ? scopedUserIds : [0] };
+    }
+
     const pageNum = Number(page) || 1;
     const limitNum = Number(limit) || 20;
     const offset = (pageNum - 1) * limitNum;
@@ -574,6 +770,9 @@ const listTeachers = async (req: Request, res: Response) => {
 
     const where: any = {};
     if (organizationId) where.organizationId = organizationId;
+
+    const scope = getAdminScope(req);
+    if (scope !== null) where.organizationId = scope;
 
     const userWhere: any = {};
     if (search) {
@@ -666,7 +865,12 @@ const listParents = async (req: Request, res: Response) => {
           model: Student,
           as: "Students",
           attributes: ["id"],
-          required: false,
+          // School admins only see parents linked to their school's students
+          where:
+            getAdminScope(req) !== null
+              ? { organizationId: getAdminScope(req) }
+              : undefined,
+          required: getAdminScope(req) !== null,
         },
       ],
     });
@@ -700,6 +904,15 @@ const createUser = async (req: Request, res: Response) => {
       return res.status(400).json({ message: `role must be one of ${validRoles.join(", ")}` });
     }
 
+    // School admins can only create members of their own school, never admins
+    const scope = getAdminScope(req);
+    if (scope !== null && role === "Admin") {
+      return res
+        .status(403)
+        .json({ message: "School admins cannot create admin accounts" });
+    }
+    const effectiveOrganizationId = scope !== null ? scope : organizationId;
+
     const existing = await User.findOne({ where: { email } });
     if (existing) {
       return res.status(409).json({ message: "Email already in use" });
@@ -707,10 +920,10 @@ const createUser = async (req: Request, res: Response) => {
 
     let resolvedOrganizationId: number | undefined;
     if (role === "Student" || role === "Teacher") {
-      if (organizationId === undefined) {
+      if (effectiveOrganizationId === undefined) {
         return res.status(400).json({ message: "organizationId is required for this role" });
       }
-      const organization = await Organization.findByPk(Number(organizationId));
+      const organization = await Organization.findByPk(Number(effectiveOrganizationId));
       if (!organization) {
         return res.status(400).json({ message: "Target organization does not exist" });
       }
@@ -849,10 +1062,43 @@ const updateUser = async (req: Request, res: Response) => {
         return res.status(404).json({ message: "User not found" });
       }
 
+      const scope = getAdminScope(req);
+      if (scope !== null) {
+        // Out-of-school targets (and all Admin accounts) look nonexistent
+        const inScope = await isUserInAdminScope(userRecord, scope, transaction);
+        if (!inScope) {
+          return res.status(404).json({ message: "User not found" });
+        }
+        if (
+          requestedOrganizationId !== undefined &&
+          requestedOrganizationId !== scope
+        ) {
+          return res.status(403).json({
+            message: "School admins cannot move users to another organization",
+          });
+        }
+      }
+
       const userUpdateData: Record<string, any> = {};
       if (firstName) userUpdateData.firstName = firstName;
       if (lastName !== undefined) userUpdateData.lastName = lastName;
       if (email) userUpdateData.email = email;
+
+      // Super admins can assign an Admin account to a school, turning it into
+      // a school-scoped admin (or clear it to restore full access).
+      if (
+        scope === null &&
+        userRecord.role === "Admin" &&
+        requestedOrganizationId !== undefined
+      ) {
+        if (requestedOrganizationId !== null) {
+          const organization = await Organization.findByPk(requestedOrganizationId, { transaction });
+          if (!organization) {
+            return res.status(400).json({ message: "Target organization does not exist" });
+          }
+        }
+        userUpdateData.organizationId = requestedOrganizationId;
+      }
 
       if (userRecord.role === "Student") {
         const student = await Student.findOne({ where: { userId }, transaction });
@@ -905,7 +1151,11 @@ const updateUser = async (req: Request, res: Response) => {
         if (requestedClassId !== undefined) studentUpdateData.classId = requestedClassId;
 
         if (Object.keys(studentUpdateData).length > 0) {
-          await student.update(studentUpdateData, { transaction });
+          await Student.update(studentUpdateData, {
+            where: { id: student.id },
+            transaction,
+            fields: Object.keys(studentUpdateData),
+          });
         }
       } else if (userRecord.role === "Teacher") {
         const teacher = await Teacher.findOne({ where: { userId }, transaction });
@@ -995,6 +1245,11 @@ const deleteUser = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const scope = getAdminScope(req);
+    if (scope !== null && !(await isUserInAdminScope(userRecord, scope))) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     if (userRecord.role === "Student") {
       const student = await Student.findOne({ where: { userId } });
       if (student) {
@@ -1034,6 +1289,9 @@ const listClasses = async (req: Request, res: Response) => {
     if (gradeId) where.gradeId = gradeId;
     if (search) where.classname = { [Op.like]: `%${String(search)}%` };
 
+    const scope = getAdminScope(req);
+    if (scope !== null) where.organizationId = scope;
+
     const pageNum = Number(page) || 1;
     const limitNum = Number(limit) || 20;
     const offset = (pageNum - 1) * limitNum;
@@ -1063,11 +1321,15 @@ const createClass = async (req: Request, res: Response) => {
   try {
     const { classname, gradeId, grade, organizationId, classdescrption } = req.body;
 
-    if (!classname || (!gradeId && !grade) || !organizationId) {
+    // School admins always create classes inside their own school
+    const scope = getAdminScope(req);
+    const effectiveOrganizationId = scope !== null ? scope : organizationId;
+
+    if (!classname || (!gradeId && !grade) || !effectiveOrganizationId) {
       return res.status(400).json({ message: "classname, gradeId and organizationId are required" });
     }
 
-    const organization = await Organization.findByPk(Number(organizationId));
+    const organization = await Organization.findByPk(Number(effectiveOrganizationId));
     if (!organization) {
       return res.status(400).json({ message: "Target organization does not exist" });
     }
@@ -1112,6 +1374,18 @@ const updateClass = async (req: Request, res: Response) => {
     }
 
     const { classname, gradeId, grade, organizationId, classdescrption } = req.body;
+
+    const scope = getAdminScope(req);
+    if (scope !== null) {
+      if (targetClass.organizationId !== scope) {
+        return res.status(404).json({ message: "Class not found" });
+      }
+      if (organizationId !== undefined && Number(organizationId) !== scope) {
+        return res.status(403).json({
+          message: "School admins cannot move classes to another organization",
+        });
+      }
+    }
 
     if (organizationId !== undefined) {
       const organization = await Organization.findByPk(Number(organizationId));
@@ -1163,6 +1437,11 @@ const deleteClass = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Class not found" });
     }
 
+    const scope = getAdminScope(req);
+    if (scope !== null && targetClass.organizationId !== scope) {
+      return res.status(404).json({ message: "Class not found" });
+    }
+
     const studentCount = await Student.count({ where: { classId } });
     if (studentCount > 0) {
       return res.status(409).json({
@@ -1192,6 +1471,11 @@ const resetUserPassword = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    const scope = getAdminScope(req);
+    if (scope !== null && !(await isUserInAdminScope(userRecord, scope))) {
+      return res.status(404).json({ message: "User not found" });
+    }
+
     const hashedPassword = bcrypt.hashSync(DEFAULT_RESET_PASSWORD, 10);
     await userRecord.update({ password: hashedPassword, isAccess: true, otpVerified: true });
 
@@ -1212,6 +1496,13 @@ const listGrades = async (req: Request, res: Response) => {
     const where: any = {};
     if (organizationId) where.organizationId = organizationId;
     if (search) where.name = { [Op.like]: `%${String(search)}%` };
+
+    // School admins see the shared/global grades plus their own school's
+    const scope = getAdminScope(req);
+    if (scope !== null) {
+      delete where.organizationId;
+      where[Op.or] = [{ organizationId: scope }, { organizationId: null }];
+    }
 
     const pageNum = Number(page) || 1;
     const limitNum = Number(limit) || 20;
@@ -1255,7 +1546,10 @@ const createGrade = async (req: Request, res: Response) => {
       organizationId,
       "organizationId",
     );
-    const resolvedOrganizationId = requestedOrganizationId ?? null;
+    // School admins always create grades inside their own school, never global
+    const scope = getAdminScope(req);
+    const resolvedOrganizationId =
+      scope !== null ? scope : requestedOrganizationId ?? null;
 
     if (resolvedOrganizationId !== null) {
       const organization = await Organization.findByPk(resolvedOrganizationId);
@@ -1298,6 +1592,9 @@ const importGrades = async (req: Request, res: Response) => {
   const successfulEntries: any[] = [];
   const failedEntries: any[] = [];
 
+  // School admins import grades into their own school only
+  const scope = getAdminScope(req);
+
   try {
     for (const sheet in processedData) {
       const all_data = processedData[sheet];
@@ -1310,10 +1607,18 @@ const importGrades = async (req: Request, res: Response) => {
             continue;
           }
 
-          let grade = await Grade.findOne({ where: { name: gradeName } });
+          let grade = await Grade.findOne({
+            where:
+              scope !== null
+                ? { name: gradeName, organizationId: scope }
+                : { name: gradeName },
+          });
           const alreadyExisted = !!grade;
           if (!grade) {
-            grade = await Grade.create({ name: gradeName });
+            grade = await Grade.create({
+              name: gradeName,
+              organizationId: scope,
+            });
           }
 
           successfulEntries.push({
@@ -1355,6 +1660,23 @@ const updateGrade = async (req: Request, res: Response) => {
     const grade = await Grade.findByPk(gradeId);
     if (!grade) {
       return res.status(404).json({ message: "Grade not found" });
+    }
+
+    const adminScope = getAdminScope(req);
+    if (adminScope !== null) {
+      if (grade.organizationId === null) {
+        return res
+          .status(403)
+          .json({ message: "School admins cannot modify shared grades" });
+      }
+      if (grade.organizationId !== adminScope) {
+        return res.status(404).json({ message: "Grade not found" });
+      }
+      if (organizationId !== undefined && Number(organizationId) !== adminScope) {
+        return res.status(403).json({
+          message: "School admins cannot move grades to another organization",
+        });
+      }
     }
 
     const requestedOrganizationId = parseOptionalPositiveId(
@@ -1417,6 +1739,18 @@ const deleteGrade = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Grade not found" });
     }
 
+    const scope = getAdminScope(req);
+    if (scope !== null) {
+      if (grade.organizationId === null) {
+        return res
+          .status(403)
+          .json({ message: "School admins cannot modify shared grades" });
+      }
+      if (grade.organizationId !== scope) {
+        return res.status(404).json({ message: "Grade not found" });
+      }
+    }
+
     const studentCount = await Student.count({ where: { gradeId } });
     const classCount = await Class.count({ where: { gradeId } });
 
@@ -1457,6 +1791,9 @@ const listScores = async (req: Request, res: Response) => {
     if (classId) where.classId = classId;
     if (gradeId) where.gradeId = gradeId;
     else if (grade) where.grade = grade;
+
+    const scope = getAdminScope(req);
+    if (scope !== null) where.organizationId = scope;
 
     const userWhere: any = {};
     if (search) {
@@ -1578,6 +1915,7 @@ const listScores = async (req: Request, res: Response) => {
 
     const allStudents = await Student.findAll({
       attributes: ["xp", "snabelYellow", "snabelBlue", "snabelRed", "level"],
+      where: scope !== null ? { organizationId: scope } : undefined,
       raw: true,
     });
 
@@ -1644,6 +1982,9 @@ const listTaskHistory = async (req: Request, res: Response) => {
     if (organizationId) studentWhere.organizationId = organizationId;
     if (classId) studentWhere.classId = classId;
     if (gradeId) studentWhere.gradeId = gradeId;
+
+    const scope = getAdminScope(req);
+    if (scope !== null) studentWhere.organizationId = scope;
 
     const taskHistoryWhere: any = {
       completionStatus: "Completed",
@@ -1794,6 +2135,18 @@ const listTaskHistory = async (req: Request, res: Response) => {
           completionStatus: "Completed",
           date: todayStr,
         },
+        include:
+          scope !== null
+            ? [
+                {
+                  model: Student,
+                  as: "Student",
+                  where: { organizationId: scope },
+                  required: true,
+                  attributes: [],
+                },
+              ]
+            : undefined,
       });
     } catch {
       /* silent */
@@ -1817,6 +2170,7 @@ const listTaskHistory = async (req: Request, res: Response) => {
 
 export {
   getAdminProfile,
+  getAdminStats,
   listOrganizations,
   getOrganization,
   createOrganization,

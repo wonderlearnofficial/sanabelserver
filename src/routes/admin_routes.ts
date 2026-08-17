@@ -24,6 +24,20 @@ router.get("/me", authenticateToken, checkAdmin, adminController.getAdminProfile
 
 /**
  * @swagger
+ * /admin/stats:
+ *   get:
+ *     summary: Dashboard counters (users, students, teachers, parents, organizations, classes) in one call
+ *     tags: [Admin]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200:
+ *         description: Counts keyed by entity name
+ */
+router.get("/stats", authenticateToken, checkAdmin, adminController.getAdminStats);
+
+/**
+ * @swagger
  * /admin/organizations:
  *   get:
  *     summary: List organizations (search/filter/paginate)
