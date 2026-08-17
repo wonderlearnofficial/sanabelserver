@@ -1,6 +1,7 @@
 import { authenticateToken } from "../middleware/auth";
 import { checkAdmin } from "../middleware/checkrole";
 import * as adminController from "../controllers/adminController";
+import * as appConfigController from "../controllers/appConfigController";
 import upload from "../middleware/uploadExcel";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
 
@@ -277,4 +278,21 @@ router.get("/scores", authenticateToken, checkAdmin, adminController.listScores)
  *       - bearerAuth: []
  */
 router.get("/history", authenticateToken, checkAdmin, adminController.listTaskHistory);
+
+/**
+ * @swagger
+ * /admin/app-version:
+ *   get:
+ *     summary: Retrieve platform version release configurations
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *   put:
+ *     summary: Update platform version release configurations
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get("/app-version", authenticateToken, checkAdmin, appConfigController.getAdminAppConfigs);
+router.put("/app-version", authenticateToken, checkAdmin, appConfigController.updateAdminAppConfig);
 

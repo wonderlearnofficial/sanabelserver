@@ -21,6 +21,7 @@ import Groupe from "../models/groupe.model";
 import TaskCategory from "../models/task-category.model";
 import Tree from "../models/tree.model";
 import MissionApprovalRequest from "../models/mission-approval-request.model";
+import AppConfig from "../models/app-config.model";
 
 // Seeder data
 import seedAdmin from "../seeders/admin-seeder";
@@ -89,6 +90,7 @@ const rundb = async () => {
 
     Tree,
     MissionApprovalRequest,
+    AppConfig,
   };
   if (!modelsInitialized) {
     Object.values(models).forEach((model) => {
@@ -260,6 +262,58 @@ const seedTrees = async () => {
   }
 };
 
+const seedDefaultAppConfigs = async () => {
+  try {
+    const defaultConfigs = [
+      {
+        platform: "android",
+        latestVersion: "1.2.6",
+        minRequiredVersion: "1.0.0",
+        forceUpdate: false,
+        storeUrl: "https://play.google.com/store/apps/details?id=com.wonderlearn.sanabel",
+        releaseNotesAr: "تحديث جديد يتضمن تحسينات عامة وإصلاحات في الأداء.",
+        releaseNotesEn: "New update including general improvements and bug fixes.",
+        maintenanceMode: false,
+      },
+      {
+        platform: "ios",
+        latestVersion: "1.0.0",
+        minRequiredVersion: "1.0.0",
+        forceUpdate: false,
+        storeUrl: "",
+        releaseNotesAr: "تحديث جديد يتضمن تحسينات عامة وإصلاحات في الأداء.",
+        releaseNotesEn: "New update including general improvements and bug fixes.",
+        maintenanceMode: false,
+      },
+      {
+        platform: "global",
+        latestVersion: "1.0.0",
+        minRequiredVersion: "1.0.0",
+        forceUpdate: false,
+        storeUrl: "",
+        releaseNotesAr: "",
+        releaseNotesEn: "",
+        maintenanceMode: false,
+      },
+    ];
+
+    for (const cfg of defaultConfigs) {
+      const [record, created] = await AppConfig.findOrCreate({
+        where: { platform: cfg.platform },
+        defaults: cfg,
+      });
+
+      // If existing record has outdated placeholder URL, update it to real URL
+      if (!created && cfg.platform === "android" && (record.storeUrl.includes("com.sanabel.app") || !record.storeUrl)) {
+        await record.update({ storeUrl: cfg.storeUrl });
+      }
+    }
+    logger.info("✅ App configs initialized");
+  } catch (error) {
+    logger.error("❌ Error initializing app configs:", { error });
+  }
+};
+
 const connectToDb = async (): Promise<void> => {
   try {
     await sequelize.authenticate();
@@ -273,6 +327,7 @@ const connectToDb = async (): Promise<void> => {
     await seedCoreTaskCatalog();
     await seedGradesAndMigrate();
     await seedTrees();
+    await seedDefaultAppConfigs();
   } catch (error) {
     logger.error("❌ Database connection error:", { error });
     throw error;
