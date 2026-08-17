@@ -378,8 +378,9 @@ const addPros = async (req: Request, res: Response) => {
         const challenges = await Challenge.findAll({
           where: {
             [Op.or]: [
-              { category: { [Op.in]: ["snabelBlue", "snabelRed", "snabelMixed", "snabelYellow", "xp", "alltask", "task"] } },
+              { category: { [Op.in]: ["snabelBlue", "snabelRed", "snabelMixed", "snabelYellow", "xp", "alltask", "task", "tasktype"] } },
               { taskCategory: task.taskCategory?.title || "" },
+              { tasktype: task.type || "" },
             ],
           } as any, // Explicit cast to fix TypeScript errors
         });
@@ -435,6 +436,8 @@ const addPros = async (req: Request, res: Response) => {
               else if (challenge.category === "snabelMixed") {
                 studentChallenge.pointOfStudent += (task.snabelBlue || 0) + (task.snabelRed || 0) + (task.snabelYellow || 0);
               } else if (challenge.taskCategory === task.taskCategory?.title || challenge.category === "alltask") {
+                studentChallenge.pointOfStudent += 1;
+              } else if (challenge.tasktype && (challenge.tasktype === task.type || challenge.title === task.type)) {
                 studentChallenge.pointOfStudent += 1;
               }
 

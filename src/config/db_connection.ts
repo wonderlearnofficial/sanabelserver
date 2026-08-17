@@ -317,6 +317,44 @@ const seedDefaultAppConfigs = async () => {
   }
 };
 
+// Challenges catalog represents application-wide milestones and trophies.
+// Repair missing challenge rows on startup so students' trophies always load
+// without requiring a manual seed CLI run.
+const seedCoreChallengeCatalog = async () => {
+  try {
+    const seedChallenges: any[] = demoChallengeSeeder.data || [];
+    if (seedChallenges.length === 0) return;
+
+    await sequelize.transaction(async (transaction) => {
+      const seedChallengeIds = seedChallenges.map((c) => c.id);
+      const existingChallenges = await Challenge.findAll({
+        attributes: ["id"],
+        where: { id: seedChallengeIds },
+        transaction,
+      });
+      const existingChallengeIds = new Set(existingChallenges.map((c) => c.id));
+      const missingChallenges = seedChallenges.filter(
+        (c) => !existingChallengeIds.has(c.id)
+      );
+
+      if (missingChallenges.length > 0) {
+        await Challenge.bulkCreate(missingChallenges, {
+          ignoreDuplicates: true,
+          transaction,
+        });
+      }
+
+      logger.info("Core challenge catalog verified", {
+        total: seedChallenges.length,
+        inserted: missingChallenges.length,
+      });
+    });
+  } catch (error) {
+    logger.error("Error verifying core challenge catalog", { error });
+    throw error;
+  }
+};
+
 const connectToDb = async (): Promise<void> => {
   try {
     await sequelize.authenticate();
@@ -328,6 +366,7 @@ const connectToDb = async (): Promise<void> => {
     // Ensure a working admin login always exists in this environment
     await seedAdmin();
     await seedCoreTaskCatalog();
+    await seedCoreChallengeCatalog();
     await seedGradesAndMigrate();
     await seedTrees();
     await seedDefaultAppConfigs();

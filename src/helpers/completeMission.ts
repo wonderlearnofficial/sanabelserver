@@ -90,6 +90,8 @@ export async function completeMissionForStudent({
       studentChallenge.pointOfStudent += (task.snabelBlue || 0) + (task.snabelRed || 0) + (task.snabelYellow || 0);
     } else if (challenge.taskCategory === task.taskCategory?.title || challenge.category === "alltask") {
       studentChallenge.pointOfStudent += 1;
+    } else if (challenge.tasktype && (challenge.tasktype === task.type || challenge.title === task.type)) {
+      studentChallenge.pointOfStudent += 1;
     }
 
     if (studentChallenge.pointOfStudent >= challenge.point) {

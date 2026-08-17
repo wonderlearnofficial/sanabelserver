@@ -369,6 +369,42 @@ const appearTaskesCategory = async (req: Request, res: Response) => {
   }
 };
 
+export const ensureStudentChallenges = async (
+  studentId: number,
+  transaction?: any,
+) => {
+  const allChallenges = await Challenge.findAll({ transaction });
+  if (allChallenges.length === 0) return;
+
+  const existingStudentChallenges = await StudentChallenge.findAll({
+    where: { studentId },
+    attributes: ["challengeId"],
+    transaction,
+  });
+
+  const existingChallengeIds = new Set(
+    existingStudentChallenges.map((sc) => sc.challengeId),
+  );
+
+  const missingChallenges = allChallenges.filter(
+    (challenge) => !existingChallengeIds.has(challenge.id),
+  );
+
+  if (missingChallenges.length > 0) {
+    const newStudentChallenges = missingChallenges.map((challenge) => ({
+      studentId,
+      challengeId: challenge.id,
+      completionStatus: "NotCompleted" as any,
+      pointOfStudent: 0,
+    }));
+
+    await StudentChallenge.bulkCreate(newStudentChallenges, {
+      ignoreDuplicates: true,
+      transaction,
+    });
+  }
+};
+
 const appearTrophySecondaireCompleted = async (req: Request, res: Response) => {
   try {
     const user = (req as Request & { user: JwtPayload | undefined }).user;
@@ -383,6 +419,7 @@ const appearTrophySecondaireCompleted = async (req: Request, res: Response) => {
         .status(404)
         .json({ message: "Student data not found in request" });
     }
+    await ensureStudentChallenges(student.id);
     const challenge = await StudentChallenge.findAll({
       where: {
         studentId: student.id,
@@ -439,6 +476,7 @@ const appearTrophySecondaireNotCompleted = async (
         .status(404)
         .json({ message: "Student data not found in request" });
     }
+    await ensureStudentChallenges(student.id);
     const challenge = await StudentChallenge.findAll({
       where: {
         studentId: student.id,
@@ -492,6 +530,7 @@ const appearTrophyPrimaireCompleted = async (req: Request, res: Response) => {
         .status(404)
         .json({ message: "Student data not found in request" });
     }
+    await ensureStudentChallenges(student.id);
     const challenge = await StudentChallenge.findAll({
       where: {
         studentId: student.id,
@@ -549,6 +588,7 @@ const appearTrophyPrimaireNotCompleted = async (
         .status(404)
         .json({ message: "Student data not found in request" });
     }
+    await ensureStudentChallenges(student.id);
     const challenge = await StudentChallenge.findAll({
       where: {
         studentId: student.id,
@@ -834,6 +874,7 @@ const appearChallangesSecondaire = async (req: Request, res: Response) => {
         .status(404)
         .json({ message: "Student data not found in request" });
     }
+    await ensureStudentChallenges(student.id);
     const challenge = await StudentChallenge.findAll({
       where: {
         studentId: student.id,
@@ -888,6 +929,7 @@ const appearChallangesPrimaire = async (req: Request, res: Response) => {
         .status(404)
         .json({ message: "Student data not found in request" });
     }
+    await ensureStudentChallenges(student.id);
     const challenge = await StudentChallenge.findAll({
       where: {
         studentId: student.id,
@@ -1356,6 +1398,7 @@ const addStudent = async (req: Request, res: Response) => {
               },
               { transaction: t }
             );
+            await ensureStudentChallenges(new_student.id, t);
           });
 
           // ✅ Best-effort email — a delivery failure shouldn't undo (or
@@ -1581,6 +1624,8 @@ const addPros = async (req: Request, res: Response) => {
         else if (challenge.category === "snabelMixed") {
           studentChallenge.pointOfStudent += (task.snabelBlue || 0) + (task.snabelRed || 0) + (task.snabelYellow || 0);
         } else if (challenge.taskCategory === task.taskCategory?.title || challenge.category === "alltask") {
+          studentChallenge.pointOfStudent += 1;
+        } else if (challenge.tasktype && (challenge.tasktype === task.type || challenge.title === task.type)) {
           studentChallenge.pointOfStudent += 1;
         }
 
