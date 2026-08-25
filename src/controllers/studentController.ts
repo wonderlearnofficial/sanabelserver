@@ -1540,7 +1540,7 @@ const addPros = async (req: Request, res: Response) => {
     }
 
     let today: Date;
-    if (time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(time)) {
+    if (time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(time)) {
       today = new Date(time);
     } else if (time && /^\d{1,2}:\d{2}(:\d{2})?$/.test(time)) {
       today = new Date();
@@ -1629,8 +1629,10 @@ const addPros = async (req: Request, res: Response) => {
           studentChallenge.pointOfStudent += 1;
         }
 
-        // Mark challenge as completed if threshold is met
-        if (studentChallenge.pointOfStudent >= challenge.point) {
+        // Mark challenge as completed if threshold is met. A null point
+        // threshold means "not configured" and must never auto-complete —
+        // `pointOfStudent >= null` coerces to `>= 0`, which is always true.
+        if (challenge.point != null && studentChallenge.pointOfStudent >= challenge.point) {
           studentChallenge.completionStatus = "Completed" as any;
           student.xp = (student.xp || 0) + (challenge.xp || 0);
           student.snabelRed = (student.snabelRed || 0) + (challenge.snabelRed || 0);
@@ -1646,9 +1648,25 @@ const addPros = async (req: Request, res: Response) => {
 
     logger.info("Task recorded successfully for student:", { studentId: student.id, taskId });
     return res.status(201).json({ message: "Task recorded successfully", student });
-  } catch (error) {
+  } catch (error: any) {
+    // The "already completed today" pre-check above has a race window: two
+    // near-simultaneous requests can both pass it before either commits. The
+    // unique index on StudentTask only catches this for teacher/parent-
+    // assigned completions (non-null teacherId/parentId) — MySQL treats NULL
+    // as distinct from NULL, so it does not block a duplicate self-completion
+    // by itself, but when it DOES fire it must produce a clean, specific
+    // response rather than an opaque 500.
+    if (error?.name === "SequelizeUniqueConstraintError") {
+      logger.warn("student addPros hit a unique constraint (treated as already-completed)", {
+        error,
+        taskId: req.body.taskId,
+      });
+      return res.status(409).json({ message: "Task already completed today" });
+    }
     logger.error("Error in student addPros:", { error, taskId: req.body.taskId });
-    return res.status(500).json({ error: "Internal Server Error" });
+    // Must include `message` — the client displays this text directly, and
+    // an error-only body renders as a blank alert (the reported production bug).
+    return res.status(500).json({ message: "Internal Server Error", error: "Internal Server Error" });
   }
 };
 

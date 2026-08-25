@@ -308,7 +308,7 @@ const addPros = async (req: Request, res: Response) => {
     
         // Validate time format (ISO string or HH:mm)
         let today: Date;
-        if (time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}.\d{3}Z$/.test(time)) {
+        if (time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(time)) {
           today = new Date(time);
         } else if (time && /^\d{1,2}:\d{2}(:\d{2})?$/.test(time)) {
           today = new Date();
@@ -441,8 +441,10 @@ const addPros = async (req: Request, res: Response) => {
                 studentChallenge.pointOfStudent += 1;
               }
 
-              // Mark challenge as completed if threshold is met
-              if (studentChallenge.pointOfStudent >= challenge.point) {
+              // Mark challenge as completed if threshold is met. A null point
+              // threshold means "not configured" and must never auto-complete —
+              // `pointOfStudent >= null` coerces to `>= 0`, which is always true.
+              if (challenge.point != null && studentChallenge.pointOfStudent >= challenge.point) {
                 studentChallenge.completionStatus = CompletionStatus.Completed;
                 student.xp = (student.xp || 0) + (challenge.xp || 0);
                 student.snabelRed = (student.snabelRed || 0) + (challenge.snabelRed || 0);
@@ -459,9 +461,18 @@ const addPros = async (req: Request, res: Response) => {
     
         logger.info("Task recorded successfully for students by parent:", { studentIds: newStudentIds, parentId: parent.id });
         return res.status(201).json({ message: "Student tasks recorded successfully" });
-      } catch (error) {
+      } catch (error: any) {
+        // See the matching comment in studentController.addPros: the pre-check
+        // above has a race window, and here the unique index DOES apply
+        // (parentId is non-null), so two near-simultaneous submissions can
+        // genuinely hit it.
+        if (error?.name === "SequelizeUniqueConstraintError") {
+          return res.status(409).json({ message: "Some students have already completed this task today" });
+        }
         logger.error("Error in addPros (parent):", { error });
-        return res.status(500).json({ error: "Internal Server Error" });
+        // Must include `message` — the client displays this text directly, and
+        // an error-only body renders as a blank alert (the reported production bug).
+        return res.status(500).json({ message: "Internal Server Error", error: "Internal Server Error" });
       }
     };
 
