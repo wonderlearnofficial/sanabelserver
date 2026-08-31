@@ -296,3 +296,25 @@ router.get("/history", authenticateToken, checkAdmin, adminController.listTaskHi
 router.get("/app-version", authenticateToken, checkAdmin, appConfigController.getAdminAppConfigs);
 router.put("/app-version", authenticateToken, checkAdmin, appConfigController.updateAdminAppConfig);
 
+/**
+ * @swagger
+ * /admin/students/{studentId}/impersonate:
+ *   post:
+ *     summary: Sign in / generate an impersonation access token as a student (Superadmin / Scoped Admin)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.post(
+  "/students/:studentId/impersonate",
+  authenticateToken,
+  checkAdmin,
+  adminController.impersonateStudent,
+);
+router.post(
+  "/impersonate-student/:studentId",
+  authenticateToken,
+  checkAdmin,
+  adminController.impersonateStudent,
+);
+

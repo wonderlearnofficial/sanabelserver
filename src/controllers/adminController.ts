@@ -18,6 +18,7 @@ import Parent from "../models/parent.model";
 import Organization, { OrganizationType } from "../models/oraganization.model";
 import Tree from "../models/tree.model";
 import { QueryTypes } from "sequelize";
+import { signAccessToken, signRefreshToken } from "../helpers/tokens";
 import { generatePassword } from "../helpers/generatePassword";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
 import { getImportField } from "../helpers/importFieldLookup";
@@ -2168,6 +2169,94 @@ const listTaskHistory = async (req: Request, res: Response) => {
   }
 };
 
+const impersonateStudent = async (req: Request, res: Response) => {
+  try {
+    const actingAdmin = (req as Request & { user: JwtPayload | undefined }).user;
+    if (!actingAdmin) {
+      return res.status(401).json({ message: "Unauthorized" });
+    }
+
+    const rawId = req.params.studentId || req.params.id || req.body?.studentId || req.body?.userId;
+    const targetId = Number(rawId);
+    if (!targetId) {
+      return res.status(400).json({ message: "Student ID is required" });
+    }
+
+    // Try finding by Student.id or User.id
+    let student = await Student.findOne({
+      where: { id: targetId },
+      include: [{ model: User, as: "user" }],
+    });
+
+    let targetUser: User | null = null;
+    if (student && student.user) {
+      targetUser = student.user as unknown as User;
+    } else {
+      // Check if targetId is User.id with role Student
+      targetUser = await User.findOne({
+        where: { id: targetId, role: "Student" },
+      });
+      if (targetUser) {
+        student = await Student.findOne({
+          where: { userId: targetUser.id },
+        });
+      }
+    }
+
+    if (!targetUser || !student) {
+      return res.status(404).json({ message: "Student not found" });
+    }
+
+    // Enforce school admin scope: if not super admin, check if student belongs to acting admin's school
+    const scope = getAdminScope(req);
+    if (scope !== null && student.organizationId !== scope) {
+      return res.status(403).json({ message: "Forbidden: Student does not belong to your organization" });
+    }
+
+    // Sign student JWT access token and refresh token
+    const token = signAccessToken({
+      id: targetUser.id,
+      email: targetUser.email,
+      role: targetUser.role,
+    });
+    const refreshToken = signRefreshToken({
+      id: targetUser.id,
+      email: targetUser.email,
+      role: targetUser.role,
+      tokenVersion: targetUser.tokenVersion,
+    });
+
+    logger.info("Admin impersonated student", {
+      adminId: actingAdmin.id,
+      adminEmail: actingAdmin.email,
+      studentId: student.id,
+      targetUserId: targetUser.id,
+      targetEmail: targetUser.email,
+    });
+
+    return res.status(200).json({
+      status: 200,
+      message: "Impersonation token generated successfully",
+      data: {
+        token,
+        refreshToken,
+        user: {
+          id: targetUser.id,
+          studentId: student.id,
+          email: targetUser.email,
+          role: targetUser.role,
+          firstName: targetUser.firstName,
+          lastName: targetUser.lastName,
+          profileImg: targetUser.profileImg,
+        },
+      },
+    });
+  } catch (error) {
+    logger.error("Error in impersonateStudent:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
 export {
   getAdminProfile,
   getAdminStats,
@@ -2198,4 +2287,5 @@ export {
   importGrades,
   listScores,
   listTaskHistory,
+  impersonateStudent,
 };
