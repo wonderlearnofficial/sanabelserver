@@ -45,6 +45,13 @@ logger.debug(
 );
 
 
+const dbPool = {
+  max: Number(process.env.DB_POOL_MAX) || 30,
+  min: Number(process.env.DB_POOL_MIN) || 5,
+  acquire: 30000,
+  idle: 10000,
+};
+
 let sequelize: Sequelize;
 let modelsInitialized = false;
 
@@ -56,6 +63,7 @@ if (process.env.DB_DRIVER === "mariadb")
     password: process.env.MYSQL_DB_PASS,
     host: process.env.MYSQL_DB_HOST,
     port: Number(process.env.MYSQL_DB_PORT),
+    pool: dbPool,
   });
 else
   sequelize = new Sequelize({
@@ -65,6 +73,7 @@ else
     password: process.env.MYSQL_DB_PASS,
     host: process.env.MYSQL_DB_HOST,
     port: Number(process.env.MYSQL_DB_PORT),
+    pool: dbPool,
   });
 
 logger.info("Using Database Driver:", { driver: process.env.DB_DRIVER });

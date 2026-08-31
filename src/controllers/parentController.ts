@@ -622,6 +622,9 @@ const addPros = async (req: Request, res: Response) => {
           userFilters.gender = gender;
         }
     
+        const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+        const offset = Math.max(Number(req.query.offset) || 0, 0);
+
         const students = await Student.findAll({
           where: {
             organizationId: null, 
@@ -635,6 +638,8 @@ const addPros = async (req: Request, res: Response) => {
             },
           ],
           order: [["xp", "DESC"]],
+          limit,
+          offset,
         });
     
         return res.status(200).json({ students });

@@ -93,9 +93,17 @@ const studentData = async (req: Request, res: Response) => {
         where: { id: student.treeProgress },
         attributes: ["id", "seeders", "water", "stage", "treeProgress"],
       });
+      const missionDate = new Date().toISOString().slice(0, 10);
       const responseData = {
         student,
         treePoint: treePoint || null,
+        completedTasks: {
+          date: missionDate,
+          taskIds: (await StudentTask.findAll({
+            where: { studentId: student.id, date: missionDate, completionStatus: "Completed" },
+            attributes: ["taskId"],
+          })).map((task) => task.taskId),
+        },
       };
       res.status(200).json({ data: responseData });
     }
@@ -267,12 +275,10 @@ const appearTaskesTypeandCategory = async (req: Request, res: Response) => {
         .json({ message: "Invalid category or type parameter" });
     }
 
-    // Get the start and end of today
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
+    // Completion DATEONLY is the authoritative UTC gameplay day.
+    const missionDate = new Date().toISOString().slice(0, 10);
+    const startOfDay = new Date(); startOfDay.setHours(0, 0, 0, 0);
+    const endOfDay = new Date(); endOfDay.setHours(23, 59, 59, 999);
 
     // Fetch all tasks matching the given categoryId and type
     const tasks = await Task.findAll({
@@ -308,7 +314,7 @@ const appearTaskesTypeandCategory = async (req: Request, res: Response) => {
         studentId: student.id,
         taskId: { [Op.in]: taskIds },
         completionStatus: "Completed",
-        updatedAt: { [Op.between]: [today, endOfToday] }, // Filter only today's completed tasks
+        ...(student.classId ? { updatedAt: { [Op.between]: [startOfDay, endOfDay] } } : { date: missionDate }),
       },
       attributes: ["taskId"],
       raw: true,
@@ -659,33 +665,11 @@ const appearTaskCompletedcountToday = async (req: Request, res: Response) => {
       where: {
         studentId: student.id,
         completionStatus: "Completed",
-        updatedAt: {
-          [Op.between]: [today, endOfToday], // Ensures same-day match
-        },
+        ...(student.classId ? { updatedAt: { [Op.between]: [today, endOfToday] } } : { date: new Date().toISOString().slice(0, 10) }),
       },
-      include: [
-        {
-          model: Task,
-          as: "task",
-          attributes: [
-            "title",
-            "description",
-            "categoryId",
-            "snabelRed",
-            "snabelYellow",
-            "snabelBlue",
-
-            "xp",
-          ],
-        },
-      ],
+      attributes: ["taskId"],
     });
 
-    if (!tasks || tasks.length === 0) {
-      return res
-        .status(404)
-        .json({ message: "No completed tasks found for the student today" });
-    }
 
     return res.status(200).json({
       message: "Completed tasks retrieved successfully",
@@ -1028,6 +1012,9 @@ const appearLeaderboard = async (req: Request, res: Response) => {
       }
     }
 
+    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+    const offset = Math.max(Number(req.query.offset) || 0, 0);
+
     const students = await Student.findAll({
       where: studentFilters,
       include: [
@@ -1051,6 +1038,8 @@ const appearLeaderboard = async (req: Request, res: Response) => {
         },
       ],
       order: [["xp", "DESC"]],
+      limit,
+      offset,
     });
 
     return res.status(200).json({ students });
@@ -1061,6 +1050,8 @@ const appearLeaderboard = async (req: Request, res: Response) => {
 };
 
 
+const mutationResult = (status: number, body: Record<string, any>) => ({ status, body });
+
 const buyWaterSeeder = async (req: Request, res: Response) => {
   try {
     const user = (req as Request & { user: JwtPayload | undefined }).user;
@@ -1068,10 +1059,12 @@ const buyWaterSeeder = async (req: Request, res: Response) => {
       return res.status(401).json({ message: "User not authenticated" });
 
     logger.info("buyWaterSeeder request body:", req.body);
-    const water = Number(req.body.water) || 0;
-    const seeders = Number(req.body.seeders) || 0;
+    const quantity = (value: unknown) => value === undefined ? 0
+      : (typeof value === "number" || (typeof value === "string" && /^\d+$/.test(value))) ? Number(value) : NaN;
+    const water = quantity(req.body.water);
+    const seeders = quantity(req.body.seeders);
 
-    if (!Number.isInteger(water) || !Number.isInteger(seeders) || water < 0 || seeders < 0) {
+    if (!Number.isSafeInteger(water) || !Number.isSafeInteger(seeders) || water < 0 || seeders < 0) {
       logger.warn("buyWaterSeeder returning 400: invalid quantities", { water, seeders });
       return res.status(400).json({ error: "Invalid water or seeders quantity" });
     }
@@ -1081,52 +1074,53 @@ const buyWaterSeeder = async (req: Request, res: Response) => {
       return res.status(400).json({ error: "Add some seeders or water first" });
     }
 
-    const student = await Student.findOne({ where: { userId: user.id } });
-    if (!student) return res.status(404).json({ message: "Student not found" });
+    const result = await Student.sequelize.transaction(async (t) => {
+      const student = await Student.findOne({ where: { userId: user.id }, transaction: t, lock: true });
+      if (!student) return mutationResult(404, { message: "Student not found" });
 
-    const totalPerColor = computeSanabelCostPerColor(
-      water,
-      seeders,
-      student.treeProgress,
-    );
-    const available = {
-      snabelRed: student.snabelRed,
-      snabelBlue: student.snabelBlue,
-      snabelYellow: student.snabelYellow,
-    };
-    const required = {
-      snabelRed: totalPerColor,
-      snabelBlue: totalPerColor,
-      snabelYellow: totalPerColor,
-    };
+      const totalPerColor = computeSanabelCostPerColor(
+        water,
+        seeders,
+        student.treeProgress,
+      );
+      const available = {
+        snabelRed: student.snabelRed,
+        snabelBlue: student.snabelBlue,
+        snabelYellow: student.snabelYellow,
+      };
+      const required = {
+        snabelRed: totalPerColor,
+        snabelBlue: totalPerColor,
+        snabelYellow: totalPerColor,
+      };
 
-    logger.info("buyWaterSeeder balance check:", { available, required });
+      logger.info("buyWaterSeeder balance check:", { available, required });
 
-    if (!hasSufficientSanabel(totalPerColor, available)) {
-      const missing = computeMissingSanabel(totalPerColor, available);
-      logger.warn("buyWaterSeeder returning 400: Insufficient snabel balance", {
-        required,
-        available,
-        missing,
-      });
-      // The client renders `missing` directly in the insufficient-funds popup,
-      // so the amounts shown always match what this endpoint actually charges.
-      return res.status(400).json({
-        error: "Insufficient snabel balance",
-        required,
-        available,
-        missing,
-      });
-    }
+      if (!hasSufficientSanabel(totalPerColor, available)) {
+        const missing = computeMissingSanabel(totalPerColor, available);
+        logger.warn("buyWaterSeeder returning 400: Insufficient snabel balance", {
+          required,
+          available,
+          missing,
+        });
+        // The client renders `missing` directly in the insufficient-funds popup,
+        // so the amounts shown always match what this endpoint actually charges.
+        return mutationResult(400, {
+          error: "Insufficient snabel balance",
+          required,
+          available,
+          missing,
+        });
+      }
 
-    // Water/seeder challenge progress is a side effect of the purchase — a
-    // student with no such challenge rows must still be able to buy.
-    const purchases = [
-      { category: "water", amount: water },
-      { category: "seeder", amount: seeders },
-    ].filter((p) => p.amount > 0);
+      // Water/seeder challenge progress is a side effect of the purchase — a
+      // student with no such challenge rows must still be able to buy.
+      const purchases = [
+        { category: "water", amount: water },
+        { category: "seeder", amount: seeders },
+      ].filter((p) => p.amount > 0);
 
-    await Student.sequelize.transaction(async (t) => {
+
       for (const { category, amount } of purchases) {
         const challengeRows = await StudentChallenge.findAll({
           where: { studentId: student.id, completionStatus: "NotCompleted" },
@@ -1137,7 +1131,7 @@ const buyWaterSeeder = async (req: Request, res: Response) => {
         for (const row of challengeRows) {
           const newPoints = row.pointOfStudent + amount;
           row.pointOfStudent = newPoints;
-          if (row.challenge && newPoints >= row.challenge.point) {
+          if (row.challenge && row.challenge.point != null && newPoints >= row.challenge.point) {
             row.completionStatus = "Completed" as any;
             student.xp = (student.xp || 0) + (row.challenge.xp || 0);
             student.snabelRed = (student.snabelRed || 0) + (row.challenge.snabelRed || 0);
@@ -1157,9 +1151,10 @@ const buyWaterSeeder = async (req: Request, res: Response) => {
       student.seeders += seeders;
 
       await student.save({ transaction: t });
-    });
 
-    res.json({ message: "Updated successfully", student });
+      return mutationResult(200, { message: "Updated successfully", student });
+    });
+    return res.status(result.status).json(result.body);
   } catch (error) {
     logger.error("Error in buyWaterSeeder:", { error });
     res.status(500).json({ error: "Internal Server Error" });
@@ -1174,63 +1169,59 @@ const growTheTree = async (req: Request, res: Response) => {
         .status(404)
         .json({ message: "User data not found in request" });
 
-    // Fetch student and current tree level in parallel
-    const student = await Student.findOne({ where: { userId: user.id } });
-    if (!student)
-      return res
-        .status(404)
-        .json({ message: "Student data not found in request" });
+    // Serialize gameplay changes before reading balances or inventory.
+    const result = await Student.sequelize.transaction(async (t) => {
+      const student = await Student.findOne({ where: { userId: user.id }, transaction: t, lock: true });
+      if (!student)
+        return mutationResult(404, { message: "Student data not found in request" });
 
-    const [treeLevel, maxTreeLevel] = await Promise.all([
-      Tree.findByPk(student.treeProgress),
-      Tree.max("id") as Promise<number>, // Explicitly tell TypeScript it's a number
-    ]);
+      const [treeLevel, maxTreeLevel] = await Promise.all([
+        Tree.findByPk(student.treeProgress, { transaction: t }),
+        Tree.max("id", { transaction: t }) as Promise<number>, // Explicitly tell TypeScript it's a number
+      ]);
 
-    if (!treeLevel)
-      return res.status(404).json({ message: "Tree data not found" });
-    if (student.treeProgress >= maxTreeLevel)
-      return res
-        .status(400)
-        .json({ message: "You have reached the maximum tree level!" });
+      if (!treeLevel)
+        return mutationResult(404, { message: "Tree data not found" });
+      if (student.treeProgress >= maxTreeLevel)
+        return mutationResult(400, { message: "You have reached the maximum tree level!" });
 
-    if (student.seeders < treeLevel.seeders || student.water < treeLevel.water)
-      return res
-        .status(400)
-        .json({ message: "Not enough seeders or water to grow the tree" });
+      if (student.seeders < treeLevel.seeders || student.water < treeLevel.water)
+        return mutationResult(400, { message: "Not enough seeders or water to grow the tree" });
 
-    // Deduct resources and update progress
-    Object.assign(student, {
-      seeders: student.seeders - treeLevel.seeders,
-      water: student.water - treeLevel.water,
-      treeProgress: student.treeProgress + 1,
-    });
+      // Deduct resources and update progress
+      Object.assign(student, {
+        seeders: student.seeders - treeLevel.seeders,
+        water: student.water - treeLevel.water,
+        treeProgress: student.treeProgress + 1,
+      });
 
-    // Fetch all open student challenges
-    const studentChallenges = await StudentChallenge.findAll({
-      where: { studentId: student.id, completionStatus: "NotCompleted" },
-      include: [{ model: Challenge, as: "challenge" }],
-    });
+      // Fetch all open student challenges
+      const studentChallenges = await StudentChallenge.findAll({
+        where: { studentId: student.id, completionStatus: "NotCompleted" },
+        include: [{ model: Challenge, as: "challenge" }],
+        transaction: t,
+      });
 
-    const treeLevelChallenges = studentChallenges.filter(
-      (ch) => ch.challenge?.category === "treelevel"
-    );
-    const treeStageChallenges = studentChallenges.filter(
-      (ch) => ch.challenge?.category === "treestage"
-    );
+      const treeLevelChallenges = studentChallenges.filter(
+        (ch) => ch.challenge?.category === "treelevel"
+      );
+      const treeStageChallenges = studentChallenges.filter(
+        (ch) => ch.challenge?.category === "treestage"
+      );
 
-    // The new tree row the student just advanced to; drives stage challenges.
-    const nextTreeLevel =
-      student.treeProgress <= maxTreeLevel
-        ? await Tree.findByPk(student.treeProgress)
-        : null;
+      // The new tree row the student just advanced to; drives stage challenges.
+      const nextTreeLevel =
+        student.treeProgress <= maxTreeLevel
+          ? await Tree.findByPk(student.treeProgress, { transaction: t })
+          : null;
 
-    await Student.sequelize.transaction(async (t) => {
+
       for (const treeChallenge of treeLevelChallenges) {
         const newPoints = treeChallenge.pointOfStudent + 1;
         treeChallenge.pointOfStudent = newPoints;
 
         if (
-          treeChallenge.challenge &&
+          treeChallenge.challenge && treeChallenge.challenge.point != null &&
           newPoints >= treeChallenge.challenge.point
         ) {
           treeChallenge.completionStatus = "Completed" as any;
@@ -1249,7 +1240,7 @@ const growTheTree = async (req: Request, res: Response) => {
           // ">=" not "===": if a stage milestone is ever skipped over, the
           // challenge must still complete instead of being stuck forever.
           if (
-            treeChallenge.challenge &&
+            treeChallenge.challenge && treeChallenge.challenge.point != null &&
             nextTreeLevel.stage >= treeChallenge.challenge.point
           ) {
             treeChallenge.completionStatus = "Completed" as any;
@@ -1263,11 +1254,10 @@ const growTheTree = async (req: Request, res: Response) => {
       }
 
       await student.save({ transaction: t });
-    });
 
-    return res
-      .status(200)
-      .json({ message: "Tree successfully grown!", student });
+      return mutationResult(200, { message: "Tree successfully grown!", student, treePoint: nextTreeLevel });
+    });
+    return res.status(result.status).json(result.body);
   } catch (error) {
     logger.error("Error in growing the tree:", { error });
     return res.status(500).json({ error: "Internal Server Error" });
@@ -1530,76 +1520,84 @@ const addPros = async (req: Request, res: Response) => {
     const user = (req as Request & { user: JwtPayload | undefined }).user;
     if (!user) return res.status(401).json({ message: "Unauthorized" });
 
-    const student = await Student.findOne({ where: { userId: user.id } });
-    if (!student) return res.status(404).json({ message: "Student not found" });
+    const result = await Student.sequelize.transaction(async (t) => {
+      const student = await Student.findOne({ where: { userId: user.id }, transaction: t, lock: true });
+      if (!student) return mutationResult(404, { message: "Student not found" });
 
-    let { taskId, time } = req.body;
-    logger.info("student addPros request:", req.body);
-    if (typeof taskId !== "number") {
-      return res.status(400).json({ message: "Invalid taskId parameter" });
-    }
+      let { taskId, time } = req.body;
+      logger.info("student addPros request:", req.body);
+      if (!Number.isSafeInteger(taskId) || taskId <= 0) {
+        return mutationResult(400, { message: "Invalid taskId parameter" });
+      }
 
-    let today: Date;
-    if (time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(time)) {
-      today = new Date(time);
-    } else if (time && /^\d{1,2}:\d{2}(:\d{2})?$/.test(time)) {
-      today = new Date();
-      const [hours, minutes] = time.split(":").map(Number);
-      today.setHours(hours + 2, minutes, 0, 0);
-    } else {
-      return res.status(400).json({ message: "Invalid time format, expected HH:mm or ISO string" });
-    }
+      const recordedAt = new Date();
+      const missionDate = recordedAt.toISOString().slice(0, 10);
+      let today: Date;
+      if (time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(time)) {
+        today = new Date(time);
+      } else if (time && /^\d{1,2}:\d{2}(:\d{2})?$/.test(time)) {
+        today = new Date();
+        const [hours, minutes] = time.split(":").map(Number);
+        if (hours > 23 || minutes > 59) return mutationResult(400, { message: "Invalid time format, expected HH:mm or ISO string" });
+        today.setHours(hours, minutes, 0, 0);
+      } else {
+        return mutationResult(400, { message: "Invalid time format, expected HH:mm or ISO string" });
+      }
 
-    const existingRecord = await StudentTask.findOne({
-      where: {
-        studentId: student.id,
-        taskId,
-        createdAt: {
-          [Op.gte]: new Date().setHours(0, 0, 0, 0),
-          [Op.lt]: new Date().setHours(23, 59, 59, 999),
+      if (!Number.isFinite(today.getTime())) return mutationResult(400, { message: "Invalid time format, expected HH:mm or ISO string" });
+
+      const existingRecord = await StudentTask.findOne({
+        where: {
+          studentId: student.id,
+          taskId,
+          date: missionDate,
+          completionStatus: "Completed",
         },
-      },
-    });
+        transaction: t,
+      });
 
-    if (existingRecord) {
-      return res.status(400).json({ message: "Task already completed today" });
-    }
+      if (existingRecord) {
+        return mutationResult(200, { message: "Task already completed today", alreadyCompleted: true, student, completion: { taskId, date: missionDate, completionStatus: "Completed" } });
+      }
 
-    const task = await Task.findOne({
-      where: { id: taskId },
-      include: [{ model: TaskCategory, as: "taskCategory" }],
-    });
+      const task = await Task.findOne({
+        where: { id: taskId },
+        include: [{ model: TaskCategory, as: "taskCategory" }],
+        transaction: t,
+      });
 
-    if (!task) return res.status(404).json({ message: "Task not found" });
+      if (!task) return mutationResult(404, { message: "Task not found" });
 
-    const challenges = await Challenge.findAll({
-      where: {
-        [Op.or]: [
-          { category: { [Op.in]: ["snabelBlue", "snabelRed", "snabelMixed", "snabelYellow", "xp", "alltask", "task", "tasktype"] } },
-          { taskCategory: task.taskCategory?.title || "" },
-          { tasktype: task.type || "" },
-        ],
-      } as any,
-    });
+      const challenges = await Challenge.findAll({
+        where: {
+          [Op.or]: [
+            { category: { [Op.in]: ["snabelBlue", "snabelRed", "snabelMixed", "snabelYellow", "xp", "alltask", "task", "tasktype"] } },
+            { taskCategory: task.taskCategory?.title || "" },
+            { tasktype: task.type || "" },
+          ],
+        } as any,
+        transaction: t,
+      });
 
-    const studentChallenges = await StudentChallenge.findAll({
-      where: {
-        studentId: student.id,
-        challengeId: challenges.map((c) => c.id),
-        completionStatus: "NotCompleted",
-      },
-      include: [{ model: Challenge, as: "challenge" }],
-    });
+      const studentChallenges = await StudentChallenge.findAll({
+        where: {
+          studentId: student.id,
+          challengeId: challenges.map((c) => c.id),
+          completionStatus: "NotCompleted",
+        },
+        include: [{ model: Challenge, as: "challenge" }],
+        transaction: t,
+      });
 
-    await Student.sequelize.transaction(async (t) => {
+
       // Create student task record
       await StudentTask.create(
         {
           studentId: student.id,
           taskId,
           completionStatus: "Completed",
-          date: today.toISOString().split("T")[0],
-          createdAt: today,
+          date: missionDate,
+          createdAt: recordedAt,
         },
         { transaction: t }
       );
@@ -1644,18 +1642,13 @@ const addPros = async (req: Request, res: Response) => {
         }
         await studentChallenge.save({ transaction: t });
       }
-    });
 
-    logger.info("Task recorded successfully for student:", { studentId: student.id, taskId });
-    return res.status(201).json({ message: "Task recorded successfully", student });
+      logger.info("Task recorded successfully for student:", { studentId: student.id, taskId });
+      return mutationResult(201, { message: "Task recorded successfully", student, completion: { taskId, date: missionDate, completionStatus: "Completed" } });
+    });
+    return res.status(result.status).json(result.body);
   } catch (error: any) {
-    // The "already completed today" pre-check above has a race window: two
-    // near-simultaneous requests can both pass it before either commits. The
-    // unique index on StudentTask only catches this for teacher/parent-
-    // assigned completions (non-null teacherId/parentId) — MySQL treats NULL
-    // as distinct from NULL, so it does not block a duplicate self-completion
-    // by itself, but when it DOES fire it must produce a clean, specific
-    // response rather than an opaque 500.
+    // Defensive handling for other completion writers using the unique index.
     if (error?.name === "SequelizeUniqueConstraintError") {
       logger.warn("student addPros hit a unique constraint (treated as already-completed)", {
         error,

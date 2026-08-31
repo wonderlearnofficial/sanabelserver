@@ -67,7 +67,8 @@ export const sendPrayerNotification = async (
   const payload = JSON.stringify({
     title: `حان وقت صلاة ${prayerName}`,
     body: "لا تنس ذكر الله وإقامة الصلاة في وقتها.",
-    icon: "/icons/icon-192.webp",
+    icon: "/icons/icon-192.png",
+    badge: "/icons/icon-192.png",
   });
 
   try {

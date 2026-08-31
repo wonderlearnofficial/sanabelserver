@@ -179,7 +179,7 @@ test("an ISO time with milliseconds is accepted (the validation regex escapes it
   assert.equal(res.statusCode, 201);
 });
 
-test("already-completed-today is a clean 400 on the normal (non-race) path", async () => {
+test("already-completed-today reconciles successfully without awarding twice", async () => {
   const student = makeStudent();
   baseStubs({ student, task: makeTask(), existingRecord: { id: 99 } });
 
@@ -189,6 +189,9 @@ test("already-completed-today is a clean 400 on the normal (non-race) path", asy
     res,
   );
 
-  assert.equal(res.statusCode, 400);
+  assert.equal(res.statusCode, 200);
   assert.equal(res.body.message, "Task already completed today");
+  assert.equal(res.body.alreadyCompleted, true);
+  assert.equal(student.xp, 0);
+  assert.equal(student.saveCalls, 0);
 });
