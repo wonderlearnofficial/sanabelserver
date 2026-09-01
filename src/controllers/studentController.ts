@@ -32,6 +32,8 @@ import {
   computeMissingSanabel,
   hasSufficientSanabel,
 } from "../helpers/shopPricing";
+import { completeMissionForStudent } from "../helpers/completeMission";
+import { utcGameplayDate } from "../services/studentTodoService";
 
 declare global {
   namespace Express {
@@ -1515,7 +1517,7 @@ const updateProfileImage = async (req: Request, res: Response) => {
 };
 
 
-const addPros = async (req: Request, res: Response) => {
+const legacyAddPros = async (req: Request, res: Response) => {
   try {
     const user = (req as Request & { user: JwtPayload | undefined }).user;
     if (!user) return res.status(401).json({ message: "Unauthorized" });
@@ -1663,6 +1665,38 @@ const addPros = async (req: Request, res: Response) => {
   }
 };
 
+const addPros = async (req: Request, res: Response) => {
+  const user = (req as Request & { user?: JwtPayload }).user;
+  if (!user) return res.status(401).json({ message: "Unauthorized" });
+  const taskId = Number(req.body.taskId);
+  if (!Number.isSafeInteger(taskId) || taskId <= 0) return res.status(400).json({ message: "Invalid taskId parameter" });
+  const time = req.body.time;
+  if (typeof time !== "string" || (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(time) && !/^\d{1,2}:\d{2}(:\d{2})?$/.test(time))) {
+    return res.status(400).json({ message: "Invalid time format, expected HH:mm or ISO string" });
+  }
+  try {
+    const result = await Student.sequelize.transaction(async (transaction: any) => {
+      const student = await Student.findOne({ where: { userId: user.id }, transaction, lock: transaction?.LOCK?.UPDATE });
+      if (!student) return mutationResult(404, { message: "Student not found" });
+      if (student.classId) return mutationResult(403, { message: "School Students must request approval for mission completion" });
+      const completion = await completeMissionForStudent({ studentId: student.id, taskId,
+        missionDate: utcGameplayDate(), source: "solo_self", recordedAt: new Date(), transaction });
+      return mutationResult(completion.alreadyCompleted ? 200 : 201, {
+        message: completion.alreadyCompleted ? "Task already completed today" : "Task recorded successfully",
+        alreadyCompleted: completion.alreadyCompleted,
+        student: completion.student,
+        completion: { taskId, date: utcGameplayDate(), completionStatus: "Completed" },
+      });
+    });
+    return res.status(result.status).json(result.body);
+  } catch (error: any) {
+    if (error?.name === "SequelizeUniqueConstraintError") {
+      return res.status(409).json({ message: "Task already completed today" });
+    }
+    logger.error("Error in student addPros", { error, taskId });
+    return res.status(500).json({ message: "Internal Server Error", error: "Internal Server Error" });
+  }
+};
 
 export {
   addStudent,

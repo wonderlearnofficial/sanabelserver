@@ -23,6 +23,7 @@ import { buildAccountCreatedEmail, getEmailAttachments, getAppUrl } from "../hel
 import { getImportField } from "../helpers/importFieldLookup";
 import { generateSixDigitPassword } from "../helpers/generatePassword";
 import { buildCategoryCounts } from "../helpers/taskCategoryStats";
+import { processDirectCompletionBatch } from "../services/directCompletionService";
 
 const parentData = async (req: Request, res: Response) => {
   const user = (req as Request & { user: JwtPayload | undefined }).user;
@@ -281,7 +282,7 @@ const appearStudentbyparent = async (req: Request, res: Response) => {
     }
 }
 
-const addPros = async (req: Request, res: Response) => {
+const legacyAddPros = async (req: Request, res: Response) => {
     try {
         // Extract user data from request
         const user = (req as Request & { user?: { id: number } }).user;
@@ -747,6 +748,23 @@ const addParent = async (req: Request, res: Response) => {
     logger.error("Error processing Excel file (parent import):", { error });
     res.status(500).json({ message: "Internal server error", error });
   }
+};
+
+const addPros = async (req: Request, res: Response) => {
+  const user = (req as Request & { user?: JwtPayload }).user;
+  if (!user) return res.status(401).json({ message: "Unauthorized" });
+  const parent = await Parent.findOne({ where: { userId: user.id } });
+  if (!parent) return res.status(404).json({ message: "Parent not found" });
+  const taskId = Number(req.body.taskId);
+  const studentIds: number[] = Array.isArray(req.body.studentIds) ? req.body.studentIds.map(Number) : [Number(req.body.studentIds)];
+  if (!Number.isSafeInteger(taskId) || taskId <= 0 || studentIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
+    return res.status(400).json({ message: "Invalid taskId or studentIds parameter" });
+  }
+  const result = await processDirectCompletionBatch({ taskId, studentIds, actorId: parent.id,
+    actorType: "parent", source: "parent_direct", comment: String(req.body.comment || ""),
+    authorize: async (student) => student.ParentId === parent.id,
+  });
+  return res.status(result.httpStatus).json(result.body);
 };
 
 export { parentData, updateDataTeacherParent, deleteData, searchStuentByCode, connectStudentToParent, appearStudentbyparent, addPros,parentLeaderboard,appearStudentInDetails, addParent };

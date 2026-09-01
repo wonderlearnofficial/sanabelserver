@@ -22,6 +22,7 @@ import {
   approveRequestAsParent,
   denyRequestAsParent,
 } from "../controllers/missionController";
+import { assignTodoAsParent } from "../controllers/todoController";
 import upload from "../middleware/uploadExcel";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
 
@@ -457,6 +458,7 @@ router.delete("/delete-parent", authenticateToken, checkparent, deleteData);
  */
 
 router.post("/add-pros", authenticateToken, checkparent, addPros);
+router.post("/assign-mission", authenticateToken, checkparent, assignTodoAsParent);
 router.get("/appear-leaderboard", authenticateToken, checkparent, parentLeaderboard);
 
 /**

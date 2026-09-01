@@ -14,7 +14,7 @@ test('personal gameplay: real HTTP, real MySQL transactions and concurrent retri
   const StudentChallenge = model('student-challenge'), Tree = model('tree');
   const Category = model('task-category');
   const express = require('express');
-  const jwt = require('jsonwebtoken');
+  const { signAccessToken } = require('../dist/helpers/tokens');
   const created = [];
   let server;
   const remember = async (Model, values) => {
@@ -41,7 +41,12 @@ test('personal gameplay: real HTTP, real MySQL transactions and concurrent retri
     app.use('/students', require('../dist/routes/student_routes').router);
     server = app.listen(0, '127.0.0.1');
     await new Promise(resolve => server.once('listening', resolve));
-    const token = jwt.sign({ id: user.id, role: 'Student' }, process.env.JWT_SECRET, { expiresIn: '5m' });
+    const token = signAccessToken({
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+    });
     const request = async (method, path, data) => {
       const response = await fetch(`http://127.0.0.1:${server.address().port}/students/${path}`, {
         method, headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },

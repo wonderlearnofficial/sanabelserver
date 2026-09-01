@@ -31,6 +31,7 @@ import {
   approveRequestAsTeacher,
   denyRequestAsTeacher,
 } from "../controllers/missionController";
+import { assignTodoAsTeacher } from "../controllers/todoController";
 export const router = require("express").Router();
 /**
  * @swagger
@@ -582,6 +583,7 @@ router.post("/create-class", authenticateToken, checkTeacher, createClass);
  *                   example: "Internal Server Error"
  */
 router.post("/add-pros", authenticateToken, checkTeacher, addPros);
+router.post("/assign-mission", authenticateToken, checkTeacher, assignTodoAsTeacher);
 /**
  * @swagger
  * /teachers/appear-student-deatiled/{studentId}:

@@ -27,6 +27,7 @@ import { buildAccountCreatedEmail, getEmailAttachments, getAppUrl } from "../hel
 import { generatePassword, generateSixDigitPassword } from "../helpers/generatePassword";
 import { getImportField } from "../helpers/importFieldLookup";
 import { buildCategoryCounts } from "../helpers/taskCategoryStats";
+import { processDirectCompletionBatch } from "../services/directCompletionService";
 
 declare global {
   namespace Express {
@@ -410,7 +411,7 @@ const appearTaskesTypeandCategories = async (req: Request, res: Response) => {
   }
 };
 
-const addPros = async (req: Request, res: Response) => {
+const legacyAddPros = async (req: Request, res: Response) => {
   try {
     // Extract user data
     const user = (req as Request & { user: JwtPayload | undefined }).user;
@@ -1035,6 +1036,26 @@ const getClassesByGrade = async (req: Request, res: Response) => {
     logger.error("Error in getClassesByGrade (teacher):", { error });
     return res.status(500).json({ message: "Internal server error" });
   }
+};
+
+const addPros = async (req: Request, res: Response) => {
+  const user = (req as Request & { user?: JwtPayload }).user;
+  if (!user) return res.status(401).json({ message: "Unauthorized" });
+  const teacher = await Teacher.findOne({ where: { userId: user.id } });
+  if (!teacher) return res.status(404).json({ message: "Teacher not found" });
+  const taskId = Number(req.body.taskId);
+  const studentIds: number[] = Array.isArray(req.body.studentIds) ? req.body.studentIds.map(Number) : [Number(req.body.studentIds)];
+  if (!Number.isSafeInteger(taskId) || taskId <= 0 || studentIds.some((id) => !Number.isSafeInteger(id) || id <= 0)) {
+    return res.status(400).json({ message: "Invalid taskId or studentIds parameter" });
+  }
+  const result = await processDirectCompletionBatch({ taskId, studentIds, actorId: teacher.id,
+    actorType: "teacher", source: "teacher_direct", comment: String(req.body.comment || ""),
+    authorize: async (student) => {
+      if (!teacher.organizationId || !student.classId || student.organizationId !== teacher.organizationId) return false;
+      return !!(await Class.findOne({ where: { id: student.classId, teacherId: teacher.id, organizationId: teacher.organizationId } }));
+    },
+  });
+  return res.status(result.httpStatus).json(result.body);
 };
 
 

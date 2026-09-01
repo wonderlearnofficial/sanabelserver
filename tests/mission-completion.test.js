@@ -7,6 +7,9 @@ const Challenge = require("../dist/models/challenge.model").default;
 const StudentChallenge = require("../dist/models/student-challenge.model").default;
 const StudentTask = require("../dist/models/student-task.model").default;
 const Teacher = require("../dist/models/teacher.model").default;
+const Class = require("../dist/models/class.model").default;
+const StudentTodoItem = require("../dist/models/student-todo-item.model").default;
+const MissionApprovalRequest = require("../dist/models/mission-approval-request.model").default;
 
 const { completeMissionForStudent } = require("../dist/helpers/completeMission");
 const { addPros: teacherAddPros } = require("../dist/controllers/teacherController");
@@ -72,7 +75,8 @@ test("completeMissionForStudent grants XP, Sanabel points, and progresses challe
   };
 
   let studentTaskCreated = null;
-  Student.findByPk = async () => student;
+  Student.findOne = async () => student;
+  StudentTask.findOne = async () => null;
   Task.findOne = async () => task;
   StudentTask.create = async (data) => {
     studentTaskCreated = data;
@@ -108,9 +112,19 @@ test("completeMissionForStudent grants XP, Sanabel points, and progresses challe
   assert.equal(studentTaskCreated.completionStatus, "Completed");
 });
 
-test("teacher addPros validates parameters and prevents duplicates on the same day", async () => {
-  Teacher.findOne = async () => ({ id: 1, userId: 99 });
-  StudentTask.findAll = async () => [{ studentId: 10, taskId: 5 }];
+test("teacher addPros treats an already-completed student as an idempotent batch result", async () => {
+  const student = { id: 10, classId: 4, organizationId: 3 };
+  Teacher.findOne = async () => ({ id: 1, userId: 99, organizationId: 3 });
+  Task.findOne = async () => ({ id: 5 });
+  Student.findOne = async () => student;
+  Class.findOne = async () => ({ id: 4, teacherId: 1, organizationId: 3 });
+  StudentTask.findOne = async () => ({ id: 77, studentId: 10, taskId: 5, completionSource: "teacher_direct" });
+  StudentTodoItem.findOne = async () => ({ id: 88 });
+  MissionApprovalRequest.update = async () => [0];
+  Object.defineProperty(Student, "sequelize", {
+    value: { transaction: async (work) => work({ LOCK: { UPDATE: "UPDATE" } }) },
+    configurable: true,
+  });
 
   const req = {
     user: { id: 99 },
@@ -124,7 +138,7 @@ test("teacher addPros validates parameters and prevents duplicates on the same d
   const res = makeResponse();
   await teacherAddPros(req, res);
 
-  assert.equal(res.statusCode, 400);
-  assert.equal(res.body.message, "Some students have already completed this task today");
-  assert.deepEqual(res.body.existingStudents, [10]);
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.summary.already_completed, 1);
+  assert.equal(res.body.results[0].rewardsGranted, false);
 });

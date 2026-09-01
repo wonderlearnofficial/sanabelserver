@@ -5,6 +5,7 @@ import {
   getMyRequestStatus,
   getMyApprovers,
 } from "../controllers/missionController";
+import { addMyTodo, listMyTodo, removeMyTodo } from "../controllers/todoController";
 
 export const router = require("express").Router();
 
@@ -82,3 +83,7 @@ router.get("/myRequestStatus", authenticateToken, checkstudent, getMyRequestStat
  *         description: "{ hasParent: boolean, hasTeacher: boolean, approvers: { type: 'parent'|'teacher', name: string }[] }"
  */
 router.get("/myApprovers", authenticateToken, checkstudent, getMyApprovers);
+
+router.get("/todo", authenticateToken, checkstudent, listMyTodo);
+router.post("/todo", authenticateToken, checkstudent, addMyTodo);
+router.delete("/todo/:id", authenticateToken, checkstudent, removeMyTodo);

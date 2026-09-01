@@ -22,6 +22,7 @@ class MissionApprovalRequest extends Model {
   declare approvedById: CreationOptional<number | null>;
   declare approvedByType: CreationOptional<string | null>;
   declare approvedAt: CreationOptional<Date | null>;
+  declare todoItemId: CreationOptional<number | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -33,6 +34,10 @@ class MissionApprovalRequest extends Model {
     MissionApprovalRequest.belongsTo(models.Task, {
       foreignKey: "missionId",
       as: "Mission",
+    });
+    MissionApprovalRequest.belongsTo(models.StudentTodoItem, {
+      foreignKey: "todoItemId",
+      as: "TodoItem",
     });
   }
 
@@ -88,6 +93,10 @@ class MissionApprovalRequest extends Model {
           type: DataTypes.DATE,
           allowNull: true,
         },
+        todoItemId: {
+          type: DataTypes.INTEGER,
+          allowNull: true,
+        },
       },
       {
         sequelize,
@@ -99,4 +108,3 @@ class MissionApprovalRequest extends Model {
 }
 
 export default MissionApprovalRequest;
-

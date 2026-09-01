@@ -21,6 +21,8 @@ import Groupe from "../models/groupe.model";
 import TaskCategory from "../models/task-category.model";
 import Tree from "../models/tree.model";
 import MissionApprovalRequest from "../models/mission-approval-request.model";
+import StudentTodoItem from "../models/student-todo-item.model";
+import StudentTodoSource from "../models/student-todo-source.model";
 import AppConfig from "../models/app-config.model";
 
 // Seeder data
@@ -99,6 +101,8 @@ const rundb = async () => {
 
     Tree,
     MissionApprovalRequest,
+    StudentTodoItem,
+    StudentTodoSource,
     AppConfig,
   };
   if (!modelsInitialized) {

@@ -21,6 +21,8 @@ class StudentTask extends Model {
   declare date: string;
   declare parentId: number | null;
   declare teacherId: number | null;
+  declare completionKey: string | null;
+  declare completionSource: string | null;
 
   static associate(models: any) {
     StudentTask.belongsTo(models.Student, {
@@ -94,6 +96,14 @@ class StudentTask extends Model {
           allowNull: false,
           defaultValue: Sequelize.literal("CURRENT_DATE"),
         },
+        completionKey: {
+          type: DataTypes.STRING(100),
+          allowNull: true,
+        },
+        completionSource: {
+          type: DataTypes.STRING(40),
+          allowNull: true,
+        },
       },
       {
         sequelize,
@@ -102,8 +112,8 @@ class StudentTask extends Model {
         indexes: [
           {
             unique: true,
-            name: "stu_task_date_p_t_unique", // Shortened index name
-            fields: ["studentId", "taskId", "date", "parentId", "teacherId"],
+            name: "student_task_completion_key_unique",
+            fields: ["completionKey"],
           },
         ],
         
