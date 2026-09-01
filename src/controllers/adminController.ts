@@ -94,7 +94,18 @@ const getAdminProfile = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Admin not found" });
     }
 
-    return res.status(200).json({ data: admin });
+    // Scope comes from the Admins table (database V2 authoritative source),
+    // resolved by checkAdmin. isSuperAdmin is derived, never stored.
+    const scope = (req as Request & { adminOrganizationId?: number | null }).adminOrganizationId;
+    const organizationId = scope !== undefined ? scope : admin.organizationId ?? null;
+
+    return res.status(200).json({
+      data: {
+        ...admin.toJSON(),
+        organizationId,
+        isSuperAdmin: organizationId === null,
+      },
+    });
   } catch (error) {
     logger.error("Error in getAdminProfile:", { error });
     return res.status(500).json({ message: "Internal Server Error" });

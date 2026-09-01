@@ -1,11 +1,126 @@
 import { authenticateToken } from "../middleware/auth";
-import { checkAdmin } from "../middleware/checkrole";
+import { checkAdmin, requireSuperAdmin } from "../middleware/checkrole";
 import * as adminController from "../controllers/adminController";
+import * as analyticsController from "../controllers/analyticsController";
 import * as appConfigController from "../controllers/appConfigController";
 import upload from "../middleware/uploadExcel";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
 
 export const router = require("express").Router();
+
+// ---------------------------------------------------------------------------
+// Super-Admin-only analytics
+//
+// Chain: authenticateToken -> checkAdmin (resolves scope from Admins) ->
+// requireSuperAdmin (rejects any admin with an organizationId). A school admin,
+// teacher, parent or student receives 403 on every route below regardless of
+// whether the client renders the navigation for it.
+// ---------------------------------------------------------------------------
+const superAdminOnly = [authenticateToken, checkAdmin, requireSuperAdmin];
+
+/**
+ * @swagger
+ * /admin/analytics/overview:
+ *   get:
+ *     summary: Platform-wide KPIs (Super Admin only)
+ *     tags: [Analytics]
+ *     security:
+ *       - BearerAuth: []
+ *     responses:
+ *       200: { description: Overview metrics }
+ *       403: { description: Super Admin access required }
+ */
+router.get("/analytics/overview", ...superAdminOnly, analyticsController.overview);
+
+/**
+ * @swagger
+ * /admin/analytics/completions:
+ *   get:
+ *     summary: Paginated mission-completion records (Super Admin only)
+ *     tags: [Analytics]
+ *     security:
+ *       - BearerAuth: []
+ *     parameters:
+ *       - { in: query, name: from, schema: { type: string, format: date } }
+ *       - { in: query, name: to, schema: { type: string, format: date } }
+ *       - { in: query, name: page, schema: { type: integer } }
+ *       - { in: query, name: limit, schema: { type: integer, maximum: 100 } }
+ *       - { in: query, name: search, schema: { type: string } }
+ *       - { in: query, name: organizationId, schema: { type: integer } }
+ *       - { in: query, name: classId, schema: { type: integer } }
+ *       - { in: query, name: taskId, schema: { type: integer } }
+ *       - { in: query, name: categoryId, schema: { type: integer } }
+ *       - { in: query, name: source, schema: { type: string } }
+ *     responses:
+ *       200: { description: Completion rows with pagination metadata }
+ *       403: { description: Super Admin access required }
+ */
+router.get("/analytics/completions", ...superAdminOnly, analyticsController.completions);
+
+/**
+ * @swagger
+ * /admin/analytics/missions:
+ *   get:
+ *     summary: Mission completion rankings, categories, sources and trend (Super Admin only)
+ *     tags: [Analytics]
+ *     security: [{ BearerAuth: [] }]
+ *     responses:
+ *       200: { description: Mission analytics }
+ *       403: { description: Super Admin access required }
+ */
+router.get("/analytics/missions", ...superAdminOnly, analyticsController.missions);
+
+/**
+ * @swagger
+ * /admin/analytics/users:
+ *   get:
+ *     summary: Engagement metrics derived from mission completions (Super Admin only)
+ *     tags: [Analytics]
+ *     security: [{ BearerAuth: [] }]
+ *     responses:
+ *       200: { description: Engagement analytics }
+ *       403: { description: Super Admin access required }
+ */
+router.get("/analytics/users", ...superAdminOnly, analyticsController.users);
+
+/**
+ * @swagger
+ * /admin/analytics/organizations:
+ *   get:
+ *     summary: Per-organization rollup (Super Admin only)
+ *     tags: [Analytics]
+ *     security: [{ BearerAuth: [] }]
+ *     responses:
+ *       200: { description: Organization analytics }
+ *       403: { description: Super Admin access required }
+ */
+router.get("/analytics/organizations", ...superAdminOnly, analyticsController.organizations);
+
+/**
+ * @swagger
+ * /admin/analytics/approvals:
+ *   get:
+ *     summary: Approval funnel, resolution times and oldest pending (Super Admin only)
+ *     tags: [Analytics]
+ *     security: [{ BearerAuth: [] }]
+ *     responses:
+ *       200: { description: Approval analytics }
+ *       403: { description: Super Admin access required }
+ */
+router.get("/analytics/approvals", ...superAdminOnly, analyticsController.approvals);
+
+/**
+ * @swagger
+ * /admin/analytics/assignments:
+ *   get:
+ *     summary: To-Do assignment funnel by source (Super Admin only)
+ *     tags: [Analytics]
+ *     security: [{ BearerAuth: [] }]
+ *     responses:
+ *       200: { description: Assignment analytics }
+ *       403: { description: Super Admin access required }
+ */
+router.get("/analytics/assignments", ...superAdminOnly, analyticsController.assignments);
 
 /**
  * @swagger
