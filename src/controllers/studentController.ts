@@ -735,24 +735,26 @@ const appearTaskCompleted = async (req: Request, res: Response) => {
 
     if (!tasks || tasks.length === 0) {
       return res
-        .status(404)
-        .json({ message: "No completed tasks found for the student today" });
+        .status(200)
+        .json({ message: "No completed tasks found", completedTasksCount: 0, completedTasks: [] });
     }
 
     // Format the response to include category title
     const completedTasks = tasks.map((task: any) => ({
-      title: task.task.title,
-      type: task.task.type,
+      id: task.taskId,
+      taskId: task.taskId,
+      title: task.task ? task.task.title : "",
+      type: task.task ? task.task.type : "",
       createdAt: task.createdAt,
       missionDate: task.date,
-      description: task.task.description,
-      categoryId: task.task.categoryId,
-      category: task.task.category ? task.task.category.title : "Unknown", // Category title
-      tasktype: task.task.tasktype ?? "Unknown",
-      snabelRed: task.task.snabelRed,
-      snabelYellow: task.task.snabelYellow,
-      snabelBlue: task.task.snabelBlue,
-      xp: task.task.xp,
+      description: task.task ? task.task.description : "",
+      categoryId: task.task ? task.task.categoryId : null,
+      category: task.task?.category ? task.task.category.title : "Unknown", // Category title
+      tasktype: task.task?.tasktype ?? "Unknown",
+      snabelRed: task.task?.snabelRed ?? 0,
+      snabelYellow: task.task?.snabelYellow ?? 0,
+      snabelBlue: task.task?.snabelBlue ?? 0,
+      xp: task.task?.xp ?? 0,
       updatedAt: task.updatedAt,
     }));
 
