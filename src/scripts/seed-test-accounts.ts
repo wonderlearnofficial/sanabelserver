@@ -1,4 +1,4 @@
-﻿import dotenv from "dotenv";
+import dotenv from "dotenv";
 dotenv.config();
 
 import fs from "fs";
@@ -210,14 +210,18 @@ async function seedTestAccounts() {
         });
       }
 
+      // Attach all challenges in a single batch insert (ignoreDuplicates handles re-runs)
       if (challenges.length > 0) {
-        for (const ch of challenges) {
-          await StudentChallenge.findOrCreate({
-            where: { studentId: studentRow.id, challengeId: ch.id },
-            defaults: { studentId: studentRow.id, challengeId: ch.id, completionStatus: "NotCompleted" },
-          });
-        }
+        await StudentChallenge.bulkCreate(
+          challenges.map((ch: any) => ({
+            studentId: studentRow.id,
+            challengeId: ch.id,
+            completionStatus: "NotCompleted",
+          })),
+          { ignoreDuplicates: true }
+        );
       }
+
 
       studentSummaries.push({
         name: `${sd.firstName} ${sd.lastName}`,
