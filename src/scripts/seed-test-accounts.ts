@@ -1,6 +1,21 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+// Auto-switch to Railway public proxy if targeting railway or if running on developer machine with .railway.internal
+if (
+  process.argv.includes("--railway") ||
+  process.env.npm_lifecycle_event === "seed:test-railway" ||
+  process.env.MYSQL_DB_HOST?.endsWith(".railway.internal")
+) {
+  process.env.MYSQL_DB_HOST = "hayabusa.proxy.rlwy.net";
+  process.env.MYSQL_DB_PORT = "28191";
+  process.env.MYSQL_DB_USER = "root";
+  process.env.MYSQL_DB_PASS = "nZcvRbJXtgxcbXZNTHRPjLmKIhcmtYzh";
+  process.env.MYSQL_DB_NAME = "railway";
+  process.env.NODE_ENV = "production";
+  process.env.DB_SYNC_ON_STARTUP = "false";
+}
+
 import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
