@@ -143,6 +143,9 @@ const appearclass = async (req: Request, res: Response) => {
       studentCount: cls.Students ? cls.Students.length : 0,
       classId: cls.id,
       className: cls.classname,
+      // Additive: the class listing shows the grade beside the class name.
+      grade: cls.grade || null,
+      gradeId: cls.gradeId || null,
       organizationId: cls.Organization?.id || null,
       organizationName: cls.Organization?.name || null,
     }));
@@ -274,20 +277,47 @@ const createClass = async (req: Request, res: Response) => {
       grade,
       organizationId,
     } = req.body;
-    if (!classname || !grade || !organizationId) {
+    if (!classname || !grade) {
       return res
         .status(400)
         .json({
-          message:
-            "Missing required fields: classname, grade, or organizationId",
+          message: "Missing required fields: classname or grade",
         });
     }
 
+    if (!teacher.organizationId) {
+      return res.status(422).json({ message: "Teacher is not assigned to an organization" });
+    }
+    if (organizationId !== undefined && Number(organizationId) !== teacher.organizationId) {
+      return res.status(403).json({ message: "Teachers cannot create classes in another organization" });
+    }
+
+    const normalizedGrade = String(grade).trim().toLowerCase();
+    const gradeRecord =
+      (await Grade.findOne({
+        where: { name: normalizedGrade, organizationId: teacher.organizationId },
+      })) ??
+      (await Grade.findOne({
+        where: { name: normalizedGrade, organizationId: null },
+      }));
+    if (!gradeRecord) {
+      return res.status(422).json({ message: "Grade does not exist in the teacher's organization" });
+    }
+
+    const duplicate = await Class.findOne({
+      where: { classname: String(classname).trim(), organizationId: teacher.organizationId },
+    });
+    if (duplicate) {
+      return res.status(409).json({ message: "Class already exists in this organization" });
+    }
+
     const newClass = await Class.create({
-      classname,
-      classDescription,
-      grade,
-      organizationId,
+      classname: String(classname).trim(),
+      classdescrption: classDescription,
+      grade: gradeRecord.name,
+      gradeId: gradeRecord.id,
+      organizationId: teacher.organizationId,
+      teacherId: teacher.id,
     });
 
     return res
@@ -313,7 +343,7 @@ const addStudentToClass = async (req: Request, res: Response) => {
 
     const { connectCode, classId } = req.body;
 
-    if (!connectCode || !classId === undefined) {
+    if (!connectCode || classId === undefined || classId === null || classId === "") {
       return res.status(400).json({ message: "Missing required fields: connectCode, classId" });
     }
 
@@ -331,11 +361,34 @@ const addStudentToClass = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "Class not found with the provided classId" });
     }
 
+    if (
+      classExists.organizationId !== teacher.organizationId ||
+      (classExists as any).teacherId !== teacher.id
+    ) {
+      return res.status(403).json({ message: "Teacher is not authorized for this class" });
+    }
+    if (
+      student.organizationId != null &&
+      student.organizationId !== teacher.organizationId
+    ) {
+      return res.status(403).json({ message: "Student belongs to another organization" });
+    }
+
     if (student.classId === Number(classId)) {
       return res.status(200).json({ message: "No update needed: student is already in this class" });
     }
 
-   await student.update({classId:Number(classId)})
+    await Student.sequelize!.transaction(async (transaction) => {
+      await student.update(
+        {
+          classId: Number(classId),
+          organizationId: teacher.organizationId,
+          gradeId: classExists.gradeId ?? null,
+          grade: classExists.grade ?? null,
+        },
+        { transaction },
+      );
+    });
    
 
     return res.status(200).json({ message: "Student updated successfully" });
@@ -801,6 +854,9 @@ const addTeacher = async (req: Request, res: Response) => {
   const successfulEntries: any[] = [];
   const failedEntries: any[] = [];
   const organizationFiles: Record<string, { workbook: ExcelJS.Workbook; worksheet: ExcelJS.Worksheet }> = {};
+  const adminScope = (
+    req as Request & { adminOrganizationId?: number | null }
+  ).adminOrganizationId ?? null;
 
   try {
     for (const sheet in processedData) {
@@ -820,12 +876,28 @@ const addTeacher = async (req: Request, res: Response) => {
             continue;
           }
 
-          // Find or auto-create Organization (normalized the same way the
-          // standalone org/class Excel importers already store names).
           const orgName = String(orgInput).trim().toLowerCase();
-          let organization = await Organization.findOne({ where: { name: orgName } });
+          const organization = adminScope !== null
+            ? await Organization.findByPk(adminScope)
+            : await Organization.findOne({ where: { name: orgName } });
           if (!organization) {
-            organization = await Organization.create({ name: orgName });
+            failedEntries.push({
+              email,
+              code: "ORGANIZATION_NOT_FOUND",
+              message: "Organization does not exist; create it before importing teachers",
+            });
+            continue;
+          }
+          if (
+            adminScope !== null &&
+            organization.name.trim().toLowerCase() !== orgName
+          ) {
+            failedEntries.push({
+              email,
+              code: "FORBIDDEN_ORGANIZATION",
+              message: "School admins cannot import teachers into another organization",
+            });
+            continue;
           }
 
           if (!organizationFiles[organization.name]) {

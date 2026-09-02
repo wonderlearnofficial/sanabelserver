@@ -11,6 +11,7 @@ const StudentChallenge = require("../dist/models/student-challenge.model").defau
 const StudentTodoItem = require("../dist/models/student-todo-item.model").default;
 const StudentTodoSource = require("../dist/models/student-todo-source.model").default;
 const MissionApprovalRequest = require("../dist/models/mission-approval-request.model").default;
+const MissionApprovalRequestEvent = require("../dist/models/mission-approval-request-event.model").default;
 const { addOrAssignTodo } = require("../dist/services/studentTodoService");
 const { assignTodoAsTeacher } = require("../dist/controllers/todoController");
 const { requestApproval } = require("../dist/controllers/missionController");
@@ -18,6 +19,10 @@ const { addPros: studentAddPros } = require("../dist/controllers/studentControll
 const { completeMissionForStudent } = require("../dist/helpers/completeMission");
 
 const tx = { LOCK: { UPDATE: "UPDATE" } };
+// New statics used by ordering and the approval audit trail; harmless defaults
+// so pre-existing scenarios keep exercising their original paths.
+StudentTodoItem.min = async () => null;
+MissionApprovalRequestEvent.create = async (values) => values;
 const makeResponse = () => ({ statusCode: 200, body: undefined,
   status(code) { this.statusCode = code; return this; }, json(body) { this.body = body; return this; },
 });

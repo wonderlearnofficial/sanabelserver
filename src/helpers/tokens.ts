@@ -32,7 +32,14 @@ export interface TokenUser {
 
 export function signAccessToken(user: TokenUser): string {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      // Access tokens must be revocable too. Password resets, password changes,
+      // logout, and other security-sensitive account updates rotate this value.
+      tokenVersion: user.tokenVersion ?? 0,
+    },
     accessSecret(),
     { expiresIn: ACCESS_TTL },
   );

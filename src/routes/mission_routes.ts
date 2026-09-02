@@ -4,8 +4,9 @@ import {
   requestApproval,
   getMyRequestStatus,
   getMyApprovers,
+  retargetApproval,
 } from "../controllers/missionController";
-import { addMyTodo, listMyTodo, removeMyTodo } from "../controllers/todoController";
+import { addMyTodo, listMyTodo, removeMyTodo, reorderMyTodo } from "../controllers/todoController";
 
 export const router = require("express").Router();
 
@@ -31,9 +32,9 @@ export const router = require("express").Router();
  *             properties:
  *               taskId:
  *                 type: integer
- *               missionDate:
- *                 type: string
- *                 description: yyyy-mm-dd, the day the mission was actually done. Defaults to today.
+ *               todoItemId:
+ *                 type: integer
+ *                 description: Persistent To-Do membership. The server always creates the request for its current UTC day.
  *     responses:
  *       201:
  *         description: Request created
@@ -61,9 +62,15 @@ router.post("/requestApproval", authenticateToken, checkstudent, requestApproval
  *         name: missionDate
  *         schema:
  *           type: string
+ *           format: date
+ *         description: >
+ *           Canonical UTC day (YYYY-MM-DD) to read. Omit for the server's
+ *           today. A future date is rejected; the value never dates a reward.
  *     responses:
  *       200:
  *         description: Latest request for this mission/date, or null
+ *       400:
+ *         description: Invalid taskId, malformed date, or future date
  */
 router.get("/myRequestStatus", authenticateToken, checkstudent, getMyRequestStatus);
 
@@ -84,6 +91,35 @@ router.get("/myRequestStatus", authenticateToken, checkstudent, getMyRequestStat
  */
 router.get("/myApprovers", authenticateToken, checkstudent, getMyApprovers);
 
+/**
+ * @swagger
+ * /mission/todo:
+ *   get:
+ *     summary: Return a School Student's mission occurrences for one UTC date
+ *     parameters:
+ *       - in: query
+ *         name: date
+ *         schema: { type: string, format: date }
+ *         description: YYYY-MM-DD; defaults to server today. Invalid and future dates are rejected.
+ */
 router.get("/todo", authenticateToken, checkstudent, listMyTodo);
 router.post("/todo", authenticateToken, checkstudent, addMyTodo);
 router.delete("/todo/:id", authenticateToken, checkstudent, removeMyTodo);
+
+/**
+ * @swagger
+ * /mission/todo/reorder:
+ *   patch:
+ *     summary: Persist the student's manual To-Do order
+ *     description: Body { items [{ id, position }] }. Every id must be one of the authenticated student's own actionable items. No rewards or status changes.
+ */
+router.patch("/todo/reorder", authenticateToken, checkstudent, reorderMyTodo);
+
+/**
+ * @swagger
+ * /mission/approval/{requestId}/retarget:
+ *   post:
+ *     summary: Redirect a pending approval request to another eligible approver
+ *     description: Body { approverType, approverId }. Pending requests only; the previous target is preserved in MissionApprovalRequestEvents. Never grants rewards.
+ */
+router.post("/approval/:requestId/retarget", authenticateToken, checkstudent, retargetApproval);

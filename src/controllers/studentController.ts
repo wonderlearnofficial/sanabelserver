@@ -655,19 +655,17 @@ const appearTaskCompletedcountToday = async (req: Request, res: Response) => {
         .json({ message: "Student data not found for the user" });
     }
 
-    // Get the current date (without time)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    // Get the end of today (to cover full day range)
-    const endOfToday = new Date();
-    endOfToday.setHours(23, 59, 59, 999);
-
+    // One canonical UTC gameplay day for both branches. This previously read
+    // School Student counts from a local-server-midnight window over
+    // `updatedAt`, which diverges from the rest of the daily mission system in
+    // two ways: it drifts whenever the server timezone is not UTC, and it
+    // counts by row-touch time, so a Sunday mission approved on Wednesday was
+    // counted as completed on Wednesday. `date` is the mission's own day.
     const tasks = await StudentTask.findAll({
       where: {
         studentId: student.id,
         completionStatus: "Completed",
-        ...(student.classId ? { updatedAt: { [Op.between]: [today, endOfToday] } } : { date: new Date().toISOString().slice(0, 10) }),
+        date: utcGameplayDate(),
       },
       attributes: ["taskId"],
     });
@@ -746,6 +744,7 @@ const appearTaskCompleted = async (req: Request, res: Response) => {
       title: task.task.title,
       type: task.task.type,
       createdAt: task.createdAt,
+      missionDate: task.date,
       description: task.task.description,
       categoryId: task.task.categoryId,
       category: task.task.category ? task.task.category.title : "Unknown", // Category title
@@ -1267,7 +1266,9 @@ const growTheTree = async (req: Request, res: Response) => {
 };
 
 
-const addStudent = async (req: Request, res: Response) => {
+// Retained temporarily as reference for credential-workbook compatibility.
+// The active importer below applies tenant scope and relationship validation.
+const addStudentLegacy = async (req: Request, res: Response) => {
   const processedData: any = req.processedData;
   const successfulEntries: any[] = [];
   const failedEntries: any[] = [];
@@ -1479,6 +1480,308 @@ const addStudent = async (req: Request, res: Response) => {
   }
 };
 
+
+const addStudent = async (req: Request, res: Response) => {
+  const processedData: any = req.processedData;
+  const successfulEntries: any[] = [];
+  const failedEntries: any[] = [];
+  const organizationFiles: Record<
+    string,
+    { workbook: ExcelJS.Workbook; worksheet: ExcelJS.Worksheet }
+  > = {};
+  const adminScope = (
+    req as Request & { adminOrganizationId?: number | null }
+  ).adminOrganizationId ?? null;
+
+  const fail = (
+    rowNumber: number,
+    email: string,
+    code: string,
+    message: string,
+  ) => failedEntries.push({ rowNumber, email: email || null, code, message });
+
+  if (!processedData || typeof processedData !== "object") {
+    return res.status(400).json({ message: "No processed import data found" });
+  }
+
+  try {
+    for (const sheet in processedData) {
+      const rows = Array.isArray(processedData[sheet]) ? processedData[sheet] : [];
+      for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
+        const data = rows[rowIndex];
+        const rowNumber = rowIndex + 2;
+        let email = "";
+
+        try {
+          const firstName = String(
+            getImportField(data, "FirstName", "firstName", "first_name") || "",
+          ).trim();
+          const lastName = String(
+            getImportField(data, "LastName", "lastName", "last_name") || "",
+          ).trim();
+          email = String(getImportField(data, "Email", "email") || "")
+            .trim()
+            .toLowerCase();
+          const orgName = String(
+            getImportField(
+              data,
+              "OrganizationName",
+              "organizationName",
+              "school",
+              "School",
+            ) || "",
+          )
+            .trim()
+            .toLowerCase();
+          const gradeName = String(
+            getImportField(data, "Grade", "grade") || "",
+          )
+            .trim()
+            .toLowerCase();
+          const className = String(
+            getImportField(data, "ClassName", "className", "class", "Class") || "",
+          ).trim();
+
+          if (!firstName || !lastName || !email) {
+            fail(
+              rowNumber,
+              email,
+              "REQUIRED_FIELD_MISSING",
+              "firstName, lastName and email are required",
+            );
+            continue;
+          }
+          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+            fail(rowNumber, email, "INVALID_EMAIL", "Email format is invalid");
+            continue;
+          }
+
+          let organization: Organization | null = null;
+          if (adminScope !== null) {
+            organization = await Organization.findByPk(adminScope);
+            if (!organization) {
+              fail(
+                rowNumber,
+                email,
+                "ADMIN_SCOPE_INVALID",
+                "The administrator's organization no longer exists",
+              );
+              continue;
+            }
+            if (orgName && organization.name.trim().toLowerCase() !== orgName) {
+              fail(
+                rowNumber,
+                email,
+                "FORBIDDEN_ORGANIZATION",
+                "School admins cannot import students into another organization",
+              );
+              continue;
+            }
+          } else {
+            if (!orgName) {
+              fail(
+                rowNumber,
+                email,
+                "ORGANIZATION_REQUIRED",
+                "School/organization is required",
+              );
+              continue;
+            }
+            organization = await Organization.findOne({ where: { name: orgName } });
+            if (!organization) {
+              fail(
+                rowNumber,
+                email,
+                "ORGANIZATION_NOT_FOUND",
+                "Organization does not exist; create it before importing students",
+              );
+              continue;
+            }
+          }
+
+          let gradeRecord: Grade | null = null;
+          if (gradeName) {
+            gradeRecord = await Grade.findOne({
+              where: { name: gradeName, organizationId: organization.id },
+            });
+            if (!gradeRecord) {
+              gradeRecord = await Grade.findOne({
+                where: { name: gradeName, organizationId: null },
+              });
+            }
+            if (!gradeRecord) {
+              fail(
+                rowNumber,
+                email,
+                "GRADE_NOT_FOUND",
+                "Grade does not exist in this organization",
+              );
+              continue;
+            }
+          }
+
+          let classRecord: Class | null = null;
+          if (className) {
+            classRecord = await Class.findOne({
+              where: {
+                organizationId: organization.id,
+                [Op.and]: where(
+                  fn("LOWER", col("classname")),
+                  className.toLowerCase(),
+                ),
+              } as any,
+            });
+            if (!classRecord) {
+              fail(
+                rowNumber,
+                email,
+                "CLASS_NOT_FOUND",
+                "Class does not exist in this organization",
+              );
+              continue;
+            }
+            if (
+              gradeRecord &&
+              classRecord.gradeId != null &&
+              classRecord.gradeId !== gradeRecord.id
+            ) {
+              fail(
+                rowNumber,
+                email,
+                "CLASS_GRADE_MISMATCH",
+                "Class does not belong to the supplied grade",
+              );
+              continue;
+            }
+            if (!gradeRecord && classRecord.gradeId != null) {
+              gradeRecord = await Grade.findByPk(classRecord.gradeId);
+            }
+          }
+
+          if (await User.findOne({ where: { email } })) {
+            fail(rowNumber, email, "EMAIL_CONFLICT", "Email is already in use");
+            continue;
+          }
+
+          const password = generateSixDigitPassword();
+          const hashedPassword = bcrypt.hashSync(password, 10);
+          const connectCode = await generateUniqueConnectCode();
+          let newStudent!: Student;
+
+          await User.sequelize!.transaction(async (transaction) => {
+            const newUser = await User.create(
+              {
+                firstName,
+                lastName,
+                email,
+                role: "Student",
+                password: hashedPassword,
+                dateOfBirth:
+                  getImportField(data, "DateOfBirth", "dateOfBirth") || null,
+                gender: getImportField(data, "Gender", "gender") || null,
+                isAccess: true,
+                otpVerified: true,
+              },
+              { transaction },
+            );
+            newStudent = await Student.create(
+              {
+                connectCode,
+                treeProgress: 1,
+                gradeId: gradeRecord?.id ?? null,
+                grade: gradeRecord?.name ?? null,
+                userId: newUser.id,
+                organizationId: organization!.id,
+                classId: classRecord?.id ?? null,
+              },
+              { transaction },
+            );
+            await ensureStudentChallenges(newStudent.id, transaction);
+          });
+
+          if (!organizationFiles[organization.name]) {
+            const workbook = new ExcelJS.Workbook();
+            const worksheet = workbook.addWorksheet("Users");
+            worksheet.columns = [
+              { header: "Email", key: "email", width: 30 },
+              { header: "Password", key: "password", width: 20 },
+            ];
+            organizationFiles[organization.name] = { workbook, worksheet };
+          }
+          organizationFiles[organization.name].worksheet.addRow({ email, password });
+
+          let emailSent = false;
+          try {
+            await sendEmail({
+              to: email,
+              subject: "Your account in Snabel elahssan",
+              text: `Your email is ${email}, and your password is ${password}. Log in at ${getAppUrl()}`,
+              html: buildAccountCreatedEmail({
+                firstName,
+                email,
+                password,
+                roleLabel: "student",
+              }),
+              attachments: getEmailAttachments(),
+            });
+            emailSent = true;
+          } catch (emailError) {
+            logger.error("Failed to send student onboarding email (non-blocking)", {
+              emailError,
+              studentId: newStudent.id,
+            });
+          }
+
+          successfulEntries.push({
+            rowNumber,
+            email,
+            message: "Student added successfully",
+            studentId: newStudent.id,
+            connectCode,
+            emailSent,
+            needsReview: !classRecord || !gradeRecord,
+          });
+        } catch (error: any) {
+          const conflict = error?.name === "SequelizeUniqueConstraintError";
+          fail(
+            rowNumber,
+            email,
+            conflict ? "DUPLICATE_VALUE" : "ROW_FAILED",
+            conflict
+              ? "A unique value is already in use"
+              : "The row could not be imported",
+          );
+          logger.error("Student import row failed", { error, sheet, rowNumber });
+        }
+      }
+    }
+
+    const outputDir = path.resolve(__dirname, "../../output");
+    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+    const files: string[] = [];
+    for (const orgName in organizationFiles) {
+      const safeName = orgName.replace(/[\/\\?%*:|"<>]/g, "_");
+      const filePath = path.resolve(outputDir, `${safeName}_Users.xlsx`);
+      await organizationFiles[orgName].workbook.xlsx.writeFile(filePath);
+      files.push(path.basename(filePath));
+    }
+
+    return res.status(200).json({
+      message: "Student import completed",
+      total: successfulEntries.length + failedEntries.length,
+      created: successfulEntries.length,
+      failed: failedEntries.length,
+      successCount: successfulEntries.length,
+      failureCount: failedEntries.length,
+      successfulEntries,
+      failedEntries,
+      files,
+    });
+  } catch (error) {
+    logger.error("Error processing student import", { error });
+    return res.status(500).json({ message: "Internal server error" });
+  }
+};
 
 const updateProfileImage = async (req: Request, res: Response) => {
   const user = (req as Request & { user: JwtPayload | undefined }).user;

@@ -24,6 +24,11 @@ class StudentTodoItem extends Model {
   declare studentTaskId: CreationOptional<number | null>;
   declare completionSource: CreationOptional<CompletionSource | null>;
   declare completedById: CreationOptional<number | null>;
+  // Manual sort order within the student's actionable list. Null on history
+  // rows created before ordering existed; completed rows sort by completedAt.
+  declare position: CreationOptional<number | null>;
+  declare isActive: CreationOptional<boolean>;
+  declare removedAt: CreationOptional<Date | null>;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
 
@@ -33,6 +38,7 @@ class StudentTodoItem extends Model {
     StudentTodoItem.belongsTo(models.StudentTask, { foreignKey: "studentTaskId", as: "Completion" });
     StudentTodoItem.hasMany(models.StudentTodoSource, { foreignKey: "todoItemId", as: "Sources" });
     StudentTodoItem.hasMany(models.MissionApprovalRequest, { foreignKey: "todoItemId", as: "ApprovalRequests" });
+    StudentTodoItem.hasMany(models.StudentTodoDay, { foreignKey: "studentTodoItemId", as: "Days" });
   }
 
   static initModel(sequelize: Sequelize) {
@@ -50,6 +56,9 @@ class StudentTodoItem extends Model {
         studentTaskId: { type: DataTypes.INTEGER, allowNull: true },
         completionSource: { type: DataTypes.STRING(40), allowNull: true },
         completedById: { type: DataTypes.INTEGER, allowNull: true },
+        position: { type: DataTypes.INTEGER, allowNull: true, defaultValue: null },
+        isActive: { type: DataTypes.BOOLEAN, allowNull: false, defaultValue: true },
+        removedAt: { type: DataTypes.DATE, allowNull: true },
       },
       {
         sequelize,
@@ -59,6 +68,7 @@ class StudentTodoItem extends Model {
           { unique: true, name: "student_todo_active_key_unique", fields: ["activeKey"] },
           { unique: true, name: "student_todo_completion_unique", fields: ["studentTaskId"] },
           { name: "student_todo_history", fields: ["studentId", "taskId", "todoDate"] },
+          { name: "student_todo_order", fields: ["studentId", "status", "position"] },
         ],
       },
     );

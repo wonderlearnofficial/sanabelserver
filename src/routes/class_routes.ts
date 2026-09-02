@@ -2,7 +2,7 @@ import upload from "../middleware/uploadExcel";
 import { schoolAndClassProcessMiddleware, processStudentMiddleware } from "../middleware/processExcelfile";
 import { createClassByExcel, importClasses } from "../controllers/classController";
 import { authenticateToken } from "../middleware/auth";
-import { checkAdmin } from "../middleware/checkrole";
+import { checkAdmin, requireSuperAdmin } from "../middleware/checkrole";
 
 export const router = require("express").Router();
 /**
@@ -50,6 +50,7 @@ router.post(
   "/create",
   authenticateToken,
   checkAdmin,
+  requireSuperAdmin,
   upload.single("file"),
   schoolAndClassProcessMiddleware,
   createClassByExcel

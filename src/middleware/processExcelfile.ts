@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import * as XLSX from "xlsx";
 import logger from "../config/logger";
+import fs from "fs";
 
 declare global {
   namespace Express {
@@ -10,6 +11,15 @@ declare global {
     }
   }
 }
+
+const removeUploadedFile = (filePath?: string) => {
+  if (!filePath) return;
+  fs.unlink(filePath, (error) => {
+    if (error && error.code !== "ENOENT") {
+      logger.warn("Could not remove processed upload", { error });
+    }
+  });
+};
 // Middleware to process the uploaded Excel file and extract data
 const schoolAndClassProcessMiddleware = (
   req: Request,
@@ -71,10 +81,12 @@ const schoolAndClassProcessMiddleware = (
     // Add the processed data to the request object for further use in the next middleware or route
     req.processedData = allSheetData;
     req.sheetNames = sheetNames;
+    removeUploadedFile(filePath);
 
     // Call the next middleware or route handler
     next();
   } catch (error) {
+    removeUploadedFile(req.file?.path);
     logger.error("Error processing file:", { error });
     res.status(500).send("Error processing file.");
   }
@@ -115,7 +127,7 @@ const processStudentMiddleware = (
           const rowObject: Record<string, any> = {};
           headers.forEach((header, index) => {
             if (header) {
-              rowObject[header] = row[index] || null;
+              rowObject[header] = row[index] ?? null;
             }
           });
           return rowObject;
@@ -129,10 +141,12 @@ const processStudentMiddleware = (
 
     // Attach processed data to the request object
     req.processedData = allSheetData;
+    removeUploadedFile(filePath);
 
     // Call the next middleware
     next();
   } catch (error) {
+    removeUploadedFile(req.file?.path);
     logger.error("Error processing Excel student file:", { error });
     res.status(500).json({ error: "Failed to process Excel file" });
   }
@@ -179,9 +193,11 @@ const processTeacherMiddleware = (
 
     req.processedData = allSheetData;
     req.sheetNames = workbook.SheetNames;
+    removeUploadedFile(filePath);
 
     next();
   } catch (error) {
+    removeUploadedFile(req.file?.path);
     logger.error("Error processing teacher file:", { error });
     res.status(500).json({
       success: false,

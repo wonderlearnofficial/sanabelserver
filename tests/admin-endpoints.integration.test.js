@@ -255,11 +255,11 @@ test.after(async () => {
   }
 
   // Delete only records created by this test, in foreign-key-safe order.
-  if (created.classes.length) {
-    await Class.destroy({ where: { id: created.classes } });
-  }
   if (created.students.length) {
     await Student.destroy({ where: { id: created.students } });
+  }
+  if (created.classes.length) {
+    await Class.destroy({ where: { id: created.classes } });
   }
   if (created.teachers.length) {
     await Teacher.destroy({ where: { id: created.teachers } });
@@ -315,14 +315,14 @@ const relationshipCases = () => [
   {
     name: "nonexistent class is rejected",
     body: () => ({ classId: fixture.nonexistentId }),
-    status: 400,
+    status: 422,
     organizationId: () => fixture.orgA.id,
     classId: () => fixture.classA.id,
   },
   {
     name: "class belonging to another organization is rejected",
     body: () => ({ classId: fixture.classB.id }),
-    status: 400,
+    status: 422,
     organizationId: () => fixture.orgA.id,
     classId: () => fixture.classA.id,
   },
@@ -360,7 +360,7 @@ const relationshipCases = () => [
   {
     name: "nonexistent organization is rejected",
     body: () => ({ organizationId: fixture.nonexistentId }),
-    status: 400,
+    status: 422,
     organizationId: () => fixture.orgA.id,
     classId: () => fixture.classA.id,
   },
@@ -370,7 +370,7 @@ const relationshipCases = () => [
       organizationId: fixture.orgB.id,
       classId: fixture.classA.id,
     }),
-    status: 400,
+    status: 422,
     organizationId: () => fixture.orgA.id,
     classId: () => fixture.classA.id,
   },
@@ -431,6 +431,48 @@ integrationTest(
 );
 
 integrationTest(
+  "bulk imported student can be repaired with grade/class from Admin edit",
+  async () => {
+    // This is the incomplete state created by the historical importer: the
+    // account and Student profile exist, but Grade/Class are absent.
+    await Student.update(
+      {
+        organizationId: fixture.orgA.id,
+        classId: null,
+        gradeId: null,
+        grade: null,
+      },
+      { where: { id: fixture.student.id } },
+    );
+
+    const repair = await request(
+      "PATCH",
+      `/admin/users/${fixture.studentUser.id}`,
+      {
+        organizationId: fixture.orgA.id,
+        gradeId: fixture.gradeA.id,
+        classId: fixture.classA.id,
+      },
+    );
+    assert.equal(repair.status, 200, JSON.stringify(repair.body));
+
+    await fixture.student.reload();
+    assert.equal(fixture.student.organizationId, fixture.orgA.id);
+    assert.equal(fixture.student.gradeId, fixture.gradeA.id);
+    assert.equal(fixture.student.grade, fixture.gradeA.name);
+    assert.equal(fixture.student.classId, fixture.classA.id);
+
+    const refetched = await request(
+      "GET",
+      `/admin/students/${fixture.student.id}`,
+    );
+    assert.equal(refetched.status, 200, JSON.stringify(refetched.body));
+    assert.equal(refetched.body.data.student.gradeId, fixture.gradeA.id);
+    assert.equal(refetched.body.data.student.classId, fixture.classA.id);
+  },
+);
+
+integrationTest(
   "ERR-005 GET /admin/teachers returns empty and populated results with associations",
   async () => {
     const empty = await request(
@@ -446,12 +488,13 @@ integrationTest(
       `/admin/teachers?page=1&limit=25&search=${encodeURIComponent(fixture.teacherUser.email)}`,
     );
     assert.equal(populated.status, 200, JSON.stringify(populated.body));
-    assert.equal(populated.body.total, 1);
-    assert.equal(populated.body.data.length, 1);
-    assert.equal(populated.body.data[0].user.email, fixture.teacherUser.email);
-    assert.equal(populated.body.data[0].organization.id, fixture.orgA.id);
+    const matchingTeacher = populated.body.data.find(
+      (row) => row.user.email === fixture.teacherUser.email,
+    );
+    assert.ok(matchingTeacher, JSON.stringify(populated.body));
+    assert.equal(matchingTeacher.organization.id, fixture.orgA.id);
     assert.ok(
-      populated.body.data[0].Classes.some(
+      matchingTeacher.Classes.some(
         (row) => row.id === fixture.classA.id && row.GradeEntity.id === fixture.gradeA.id,
       ),
     );

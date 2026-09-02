@@ -6,6 +6,7 @@ interface ResolveParams {
   orgInput: any;
   classInput: any;
   gradeInput: any;
+  adminOrganizationId?: number | null;
 }
 
 interface ResolveResult {
@@ -29,20 +30,40 @@ export async function resolveOrgClassGrade({
   orgInput,
   classInput,
   gradeInput,
+  adminOrganizationId = null,
 }: ResolveParams): Promise<ResolveResult | ResolveError> {
   const orgName = String(orgInput || "").trim().toLowerCase();
-  if (!orgName) {
+  if (!orgName && adminOrganizationId === null) {
     return { error: "Missing school/organization name" };
   }
-  let organization = await Organization.findOne({ where: { name: orgName } });
+  const organization = adminOrganizationId !== null
+    ? await Organization.findByPk(adminOrganizationId)
+    : await Organization.findOne({ where: { name: orgName } });
   if (!organization) {
-    organization = await Organization.create({ name: orgName });
+    return { error: "Organization does not exist" };
+  }
+  if (
+    adminOrganizationId !== null &&
+    orgName &&
+    organization.name.trim().toLowerCase() !== orgName
+  ) {
+    return { error: "School admins cannot import classes into another organization" };
   }
 
   const gradeName = String(gradeInput || "").trim().toLowerCase();
-  let gradeRecord = gradeName ? await Grade.findOne({ where: { name: gradeName } }) : null;
-  if (!gradeRecord && gradeName) {
-    gradeRecord = await Grade.create({ name: gradeName });
+  if (!gradeName) {
+    return { error: "Missing grade name" };
+  }
+  let gradeRecord = await Grade.findOne({
+    where: { name: gradeName, organizationId: organization.id },
+  });
+  if (!gradeRecord) {
+    gradeRecord = await Grade.findOne({
+      where: { name: gradeName, organizationId: null },
+    });
+  }
+  if (!gradeRecord) {
+    return { error: "Grade does not exist in this organization" };
   }
 
   const className = String(classInput || "").trim();
@@ -59,6 +80,8 @@ export async function resolveOrgClassGrade({
       gradeId: gradeRecord ? gradeRecord.id : null,
       grade: gradeRecord ? gradeRecord.name : gradeName || null,
     });
+  } else if (classRecord.gradeId !== gradeRecord.id) {
+    return { error: "Existing class belongs to a different grade" };
   }
 
   return { organization, classRecord, gradeRecord };

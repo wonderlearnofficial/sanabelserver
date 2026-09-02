@@ -25,7 +25,14 @@ const importClasses = async (req: Request, res: Response) => {
           const orgInput = getImportField(data, "school", "School", "OrganizationName", "organizationName");
           const gradeInput = getImportField(data, "grade", "Grade");
 
-          const result = await resolveOrgClassGrade({ orgInput, classInput, gradeInput });
+          const result = await resolveOrgClassGrade({
+            orgInput,
+            classInput,
+            gradeInput,
+            adminOrganizationId:
+              (req as Request & { adminOrganizationId?: number | null })
+                .adminOrganizationId ?? null,
+          });
           if ("error" in result) {
             failedEntries.push({ row: data, error: result.error });
             continue;

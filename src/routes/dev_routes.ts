@@ -1,4 +1,4 @@
-import { listUsersForDevLogin, loginAsUser } from "../controllers/devController";
+import { listUsersForDevLogin, loginAsUser, getTestAccounts } from "../controllers/devController";
 
 export const router = require("express").Router();
 
@@ -29,3 +29,17 @@ router.get("/users", listUsersForDevLogin);
  *         description: Not available outside development, or user not found
  */
 router.post("/login-as/:userId", loginAsUser);
+
+/**
+ * @swagger
+ * /dev/test-accounts:
+ *   get:
+ *     summary: Get structured test account relationship data (available in all environments; passwords redacted in production)
+ *     tags: [Dev]
+ *     responses:
+ *       200:
+ *         description: Test account data
+ *       404:
+ *         description: Test accounts not seeded yet
+ */
+router.get("/test-accounts", getTestAccounts);

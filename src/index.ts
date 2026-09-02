@@ -141,12 +141,13 @@ app.use("/admin", admin_routes);
 app.use("/mission", mission_routes);
 app.use("/app", app_routes);
 
-// Dev-only "log in as any user" tool — never mounted in production, so the
-// route doesn't exist at all outside local development (the controller also
-// double-checks NODE_ENV itself as a second layer of protection).
-if (process.env.NODE_ENV !== "production") {
-  app.use("/dev", dev_routes);
-}
+// /dev routes are mounted in all environments.
+// The password-bypass login endpoints inside devController guard themselves
+// with a NODE_ENV check and return 404 in production. The /dev/test-accounts
+// endpoint is intentionally available everywhere so the /test relationship
+// page works on Railway during the testing phase.
+app.use("/dev", dev_routes);
+
 
 app.get("/health/live", (_req, res) => {
   res.status(200).json({ status: "ok" });

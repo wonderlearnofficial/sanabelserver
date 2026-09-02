@@ -5,6 +5,9 @@
     "dev": "nodemon ./src/index.ts",
     "build": "tsc -p .",
     "migrate": "sequelize-cli --config database/config.js --migrations-path database/migrations db:migrate",
+    "repair:local-arabic-catalog": "npm run build && node dist/scripts/repair-local-arabic-task-catalog.js",
+    "seed:test-local": "ts-node src/scripts/seed-test-accounts.ts",
+    "seed:test-railway": "ts-node src/scripts/seed-test-accounts.ts",
     "test": "npm run build && node --test tests/*.test.js"
   },
   "devDependencies": {

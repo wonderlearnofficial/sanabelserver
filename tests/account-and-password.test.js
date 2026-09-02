@@ -14,6 +14,9 @@ const {
   resetPassword,
   updatePassword,
 } = require("../dist/controllers/userController");
+const {
+  resetUserPassword,
+} = require("../dist/controllers/adminController");
 
 const makeResponse = () => ({
   statusCode: 200,
@@ -153,6 +156,7 @@ test("resetPassword requires OTP verification before resetting", async () => {
     password: "oldHash",
     resetOTP: "1234",
     otpExpiry: new Date(),
+    tokenVersion: 4,
     async update(fields) {
       Object.assign(this, fields);
     },
@@ -168,6 +172,7 @@ test("resetPassword requires OTP verification before resetting", async () => {
   assert.equal(resSuccess.body.message, "Password reset successfully");
   assert.equal(verifiedUser.otpVerified, false);
   assert.equal(verifiedUser.resetOTP, null);
+  assert.equal(verifiedUser.tokenVersion, 5);
   assert.ok(bcrypt.compareSync("NewSecurePassword123", verifiedUser.password));
 });
 
@@ -177,6 +182,7 @@ test("updatePassword validates current password before applying new password", a
     id: 10,
     email: "user@test.com",
     password: currentPasswordHash,
+    tokenVersion: 9,
     async update(fields) {
       Object.assign(this, fields);
     },
@@ -213,5 +219,29 @@ test("updatePassword validates current password before applying new password", a
   );
   assert.equal(resCorrect.statusCode, 200);
   assert.equal(resCorrect.body.message, "Password updated successfully");
+  assert.equal(resCorrect.body.reauthenticationRequired, true);
+  assert.equal(userRecord.tokenVersion, 10);
   assert.ok(bcrypt.compareSync("BrandNewPassword123", userRecord.password));
+});
+
+test("Admin password reset revokes every existing session for the target account", async () => {
+  const target = {
+    id: 77,
+    role: "Parent",
+    tokenVersion: 6,
+    async update(fields) {
+      Object.assign(this, fields);
+    },
+  };
+  User.findByPk = async () => target;
+
+  const res = makeResponse();
+  await resetUserPassword(
+    { params: { userId: "77" }, adminOrganizationId: null },
+    res,
+  );
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(res.body.message, "Password reset successfully");
+  assert.equal(target.tokenVersion, 7);
 });

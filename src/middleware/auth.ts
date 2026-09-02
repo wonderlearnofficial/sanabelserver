@@ -37,7 +37,9 @@ const authenticateToken = async (
 
     // A correctly signed token is not enough: the account may have been
     // deleted by an administrator while the user still has the app open.
-    const account = await User.findByPk(user.id, { attributes: ["id"] });
+    const account = await User.findByPk(user.id, {
+      attributes: ["id", "email", "role", "tokenVersion", "isAccess"],
+    });
     if (!account) {
       return res.status(401).json({
         status: 401,
@@ -46,7 +48,44 @@ const authenticateToken = async (
       });
     }
 
-    (req as Request & { user?: JwtPayload }).user = user;
+    if (!account.isAccess) {
+      return res.status(401).json({
+        status: 401,
+        code: "ACCOUNT_DISABLED",
+        message: "Account access has been disabled",
+      });
+    }
+
+    // Never authorize from stale JWT identity data. Role changes must revoke
+    // the old privileges immediately, and email is part of the signed identity.
+    if (account.role !== user.role || account.email !== user.email) {
+      return res.status(401).json({
+        status: 401,
+        code: "ACCOUNT_CHANGED",
+        message: "Account security details changed. Sign in again.",
+      });
+    }
+
+    // tokenVersion is intentionally required on access tokens. Tokens issued
+    // before this security contract was introduced are logged out once rather
+    // than being allowed to bypass password-reset revocation until expiry.
+    if (
+      !Number.isInteger(user.tokenVersion) ||
+      Number(user.tokenVersion) !== Number(account.tokenVersion || 0)
+    ) {
+      return res.status(401).json({
+        status: 401,
+        code: "SESSION_REVOKED",
+        message: "Session has been revoked. Sign in again.",
+      });
+    }
+
+    (req as Request & { user?: JwtPayload }).user = {
+      ...user,
+      email: account.email,
+      role: account.role,
+      tokenVersion: account.tokenVersion || 0,
+    };
     next();
   } catch (error) {
     if (error instanceof Error) {

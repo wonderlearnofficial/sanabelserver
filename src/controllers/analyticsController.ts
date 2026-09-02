@@ -550,23 +550,25 @@ const assignments = async (req: Request, res: Response) => {
           SUM(status='pending_approval') AS pendingApproval,
           SUM(status='completed')        AS completed,
           COUNT(*)                       AS total
-        FROM StudentTodoItems
-      `),
+        FROM StudentTodoDays
+        WHERE missionDate BETWEEN :from AND :to
+      `, { from, to }),
       query(`
         SELECT sts.sourceType,
-               COUNT(DISTINCT sts.todoItemId) AS items,
-               SUM(sti.status='completed')    AS completedItems
+               COUNT(DISTINCT d.id)           AS items,
+               SUM(d.status='completed')      AS completedItems
         FROM StudentTodoSources sts
-        JOIN StudentTodoItems sti ON sti.id = sts.todoItemId
+        JOIN StudentTodoDays d ON d.studentTodoItemId = sts.todoItemId
+        WHERE d.missionDate BETWEEN :from AND :to
         GROUP BY sts.sourceType
         ORDER BY items DESC
-      `),
+      `, { from, to }),
       query(`
         SELECT AVG(TIMESTAMPDIFF(MINUTE, createdAt, completedAt)) AS avgAssignmentToCompletionMinutes,
                COUNT(*) AS sample
-        FROM StudentTodoItems
+        FROM StudentTodoDays
         WHERE status='completed' AND completedAt IS NOT NULL
-          AND todoDate BETWEEN :from AND :to
+          AND missionDate BETWEEN :from AND :to
       `, { from, to }),
     ]);
 

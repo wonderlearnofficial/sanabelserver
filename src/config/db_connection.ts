@@ -22,7 +22,9 @@ import TaskCategory from "../models/task-category.model";
 import Tree from "../models/tree.model";
 import MissionApprovalRequest from "../models/mission-approval-request.model";
 import StudentTodoItem from "../models/student-todo-item.model";
+import StudentTodoDay from "../models/student-todo-day.model";
 import StudentTodoSource from "../models/student-todo-source.model";
+import MissionApprovalRequestEvent from "../models/mission-approval-request-event.model";
 import Admin from "../models/admin.model";
 import AppConfig from "../models/app-config.model";
 
@@ -66,6 +68,7 @@ if (process.env.DB_DRIVER === "mariadb")
     password: process.env.MYSQL_DB_PASS,
     host: process.env.MYSQL_DB_HOST,
     port: Number(process.env.MYSQL_DB_PORT),
+    charset: "utf8mb4",
     pool: dbPool,
   });
 else
@@ -76,6 +79,7 @@ else
     password: process.env.MYSQL_DB_PASS,
     host: process.env.MYSQL_DB_HOST,
     port: Number(process.env.MYSQL_DB_PORT),
+    charset: "utf8mb4",
     pool: dbPool,
   });
 
@@ -103,7 +107,9 @@ const rundb = async () => {
     Tree,
     MissionApprovalRequest,
     StudentTodoItem,
+    StudentTodoDay,
     StudentTodoSource,
+    MissionApprovalRequestEvent,
     Admin,
     AppConfig,
   };

@@ -13,6 +13,9 @@ const { rundb, sequelize } = require("../dist/config/db_connection");
 const Student = require("../dist/models/student.model").default;
 const Teacher = require("../dist/models/teacher.model").default;
 const Parent = require("../dist/models/parent.model").default;
+const StudentTodoItem = require("../dist/models/student-todo-item.model").default;
+const StudentTodoSource = require("../dist/models/student-todo-source.model").default;
+const MissionApprovalRequest = require("../dist/models/mission-approval-request.model").default;
 
 test("models initialize repeatedly without association errors", async () => {
   await rundb();
@@ -25,6 +28,11 @@ test("models initialize repeatedly without association errors", async () => {
   assert.ok(Teacher.associations.user);
   assert.ok(Teacher.associations.organization);
   assert.ok(Parent.associations.user);
+  assert.ok(StudentTodoItem.associations.Student);
+  assert.ok(StudentTodoItem.associations.Task);
+  assert.ok(StudentTodoItem.associations.Sources);
+  assert.ok(StudentTodoSource.associations.TodoItem);
+  assert.ok(MissionApprovalRequest.associations.TodoItem);
 });
 
 test.after(async () => {

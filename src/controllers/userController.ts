@@ -56,6 +56,14 @@ const login = async (req: Request, res: Response) => {
       });
     }
 
+    if (!account.isAccess) {
+      return res.status(401).json({
+        status: 401,
+        code: "ACCOUNT_DISABLED",
+        message: "Account access has been disabled",
+      });
+    }
+
     // Check if password is correct
     if (!bcrypt.compareSync(password, account.password)) {
       return res.status(401).json({
@@ -68,6 +76,7 @@ const login = async (req: Request, res: Response) => {
       id: account.id,
       email: account.email,
       role: account.role,
+      tokenVersion: account.tokenVersion,
     });
     const refreshToken = signRefreshToken({
       id: account.id,
@@ -180,17 +189,6 @@ const registration = async (req: Request, res: Response) => {
     }
     const hashedPassword = bcrypt.hashSync(password, 10);
 
-    const token = signAccessToken({
-      id: checkValidation.id,
-      email: checkValidation.email,
-      role: checkValidation.role,
-    });
-    const refreshToken = signRefreshToken({
-      id: checkValidation.id,
-      email: checkValidation.email,
-      role: checkValidation.role,
-      tokenVersion: checkValidation.tokenVersion,
-    });
     const validatedProfileImg =
       profileImg && typeof profileImg === "object" ? profileImg : null;
 
@@ -270,6 +268,17 @@ const registration = async (req: Request, res: Response) => {
           break;
       }
     });
+
+    // Sign only after the transaction has persisted the requested role. This
+    // avoids issuing a token with the temporary OTP User row's default role.
+    const tokenUser = {
+      id: checkValidation.id,
+      email: checkValidation.email,
+      role: checkValidation.role,
+      tokenVersion: checkValidation.tokenVersion,
+    };
+    const token = signAccessToken(tokenUser);
+    const refreshToken = signRefreshToken(tokenUser);
 
     return res.status(201).json({
       message: "Registration successful",
@@ -411,6 +420,7 @@ const resetPassword = async (req: Request, res: Response) => {
       resetOTP: null,
       otpExpiry: null,
       otpVerified: false, // Clear the OTP verification flag
+      tokenVersion: (user.tokenVersion || 0) + 1,
     });
 
     return res.status(200).json({
@@ -446,9 +456,15 @@ const updatePassword = async (req: Request, res: Response) => {
   }
 
   const hashedPassword = bcrypt.hashSync(new_password, 10);
-  await userRecord.update({ password: hashedPassword });
+  await userRecord.update({
+    password: hashedPassword,
+    tokenVersion: (userRecord.tokenVersion || 0) + 1,
+  });
 
-  return res.status(200).json({ message: "Password updated successfully" });
+  return res.status(200).json({
+    message: "Password updated successfully",
+    reauthenticationRequired: true,
+  });
 };
 
 const markGuideSeen = async (req: Request, res: Response) => {
@@ -515,11 +531,31 @@ const refreshAccessToken = async (req: Request, res: Response) => {
       });
     }
 
+    if (!user.isAccess) {
+      return res.status(401).json({
+        status: 401,
+        code: "ACCOUNT_DISABLED",
+        message: "Account access has been disabled",
+      });
+    }
+
     // A logout (tokenVersion bump) invalidates every previously issued refresh token.
     if ((user.tokenVersion || 0) !== (payload.tokenVersion || 0)) {
       return res
-        .status(403)
-        .json({ status: 403, message: "Refresh token revoked" });
+        .status(401)
+        .json({
+          status: 401,
+          code: "SESSION_REVOKED",
+          message: "Refresh token revoked",
+        });
+    }
+
+    if (user.role !== payload.role || user.email !== payload.email) {
+      return res.status(401).json({
+        status: 401,
+        code: "ACCOUNT_CHANGED",
+        message: "Account security details changed. Sign in again.",
+      });
     }
 
     const tokenUser = {
