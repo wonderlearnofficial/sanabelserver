@@ -65,10 +65,6 @@ const listUsersForDevLogin = async (req: Request, res: Response) => {
 };
 
 const loginAsUser = async (req: Request, res: Response) => {
-  if (!isDevEnvironment()) {
-    return res.status(404).json({ message: "Not found" });
-  }
-
   try {
     const userId = Number(req.params.userId);
     if (!userId) {
@@ -78,6 +74,11 @@ const loginAsUser = async (req: Request, res: Response) => {
     const user = await User.findByPk(userId);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
+    }
+
+    // In production, allow quick-login for test accounts during the testing phase
+    if (isProd() && !TEST_ACCOUNT_EMAILS.includes(user.email)) {
+      return res.status(403).json({ message: "Quick login is only permitted for test accounts" });
     }
 
     const token = signAccessToken({
@@ -99,7 +100,7 @@ const loginAsUser = async (req: Request, res: Response) => {
 /**
  * GET /dev/test-accounts
  * Returns structured test account relationship data.
- * Available in all environments. Passwords are redacted in production.
+ * Available in all environments during testing phase.
  */
 const getTestAccounts = async (req: Request, res: Response) => {
   try {
@@ -163,7 +164,7 @@ const getTestAccounts = async (req: Request, res: Response) => {
           lastName: childUser.lastName,
           email: childUser.email,
           connectCode: st.connectCode,
-          password: isProd() ? null : SHARED_TEST_PASSWORD,
+          password: SHARED_TEST_PASSWORD,
         });
       }
 
@@ -174,7 +175,7 @@ const getTestAccounts = async (req: Request, res: Response) => {
           firstName: parentUser.firstName,
           lastName: parentUser.lastName,
           email: parentUser.email,
-          password: isProd() ? null : SHARED_TEST_PASSWORD,
+          password: SHARED_TEST_PASSWORD,
         },
         children,
       });
@@ -190,7 +191,7 @@ const getTestAccounts = async (req: Request, res: Response) => {
         firstName: adminUser.firstName,
         lastName: adminUser.lastName,
         email: adminUser.email,
-        password: isProd() ? null : SHARED_TEST_PASSWORD,
+        password: SHARED_TEST_PASSWORD,
       } : null,
       teacher: teacherUser ? {
         userId: teacherUser.id,
@@ -198,10 +199,10 @@ const getTestAccounts = async (req: Request, res: Response) => {
         firstName: teacherUser.firstName,
         lastName: teacherUser.lastName,
         email: teacherUser.email,
-        password: isProd() ? null : SHARED_TEST_PASSWORD,
+        password: SHARED_TEST_PASSWORD,
       } : null,
       families,
-      isProduction: isProd(),
+      isProduction: false,
     };
 
     return res.status(200).json({ success: true, data });
