@@ -13,11 +13,16 @@ export enum OrganizationType {
   Charity = "Charity",
 }
 
+export type LeaderboardScope = "all_school" | "same_grade" | "same_class";
+
 class Organization extends Model {
   declare id: CreationOptional<number>;
   declare name: string;
   declare address: string;
   declare type: OrganizationType;
+  declare leaderboardScope: LeaderboardScope;
+  declare leaderboardLimit: number;
+  declare hideZeroXpStudents: boolean;
   declare createdAt: CreationOptional<Date>;
   declare updatedAt: CreationOptional<Date>;
   declare user: User | null;
@@ -62,6 +67,21 @@ class Organization extends Model {
         img: {
           type: DataTypes.STRING,
           allowNull: true,
+        },
+        leaderboardScope: {
+          type: DataTypes.ENUM("all_school", "same_grade", "same_class"),
+          allowNull: false,
+          defaultValue: "all_school",
+        },
+        leaderboardLimit: {
+          type: DataTypes.INTEGER,
+          allowNull: false,
+          defaultValue: 50,
+        },
+        hideZeroXpStudents: {
+          type: DataTypes.BOOLEAN,
+          allowNull: false,
+          defaultValue: true,
         },
       },
       {

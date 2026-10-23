@@ -35,3 +35,5 @@ config.bat
 
 # Runtime application logs are local/deployment artifacts, not source files.
 /logs/
+/load-tests/tokens.json
+/load-tests/bin/

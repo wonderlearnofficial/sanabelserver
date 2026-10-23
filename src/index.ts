@@ -10,7 +10,7 @@ import helmet from "helmet";
 import rateLimit from "express-rate-limit";
 import swaggerJsdoc from "swagger-jsdoc";
 import swaggerUi from "swagger-ui-express";
-import { connectToDb } from "./config/db_connection";
+import { connectToDb, sequelize } from "./config/db_connection";
 import { Request, Response, NextFunction } from "express";
 // Import routes
 import { router as user_route } from "./routes/user_routes";
@@ -23,46 +23,20 @@ import { router as admin_routes } from "./routes/admin_routes";
 import { router as mission_routes } from "./routes/mission_routes";
 import { router as app_routes } from "./routes/app_routes";
 import { router as dev_routes } from "./routes/dev_routes";
+import { isDevEnvironment, getTestAccounts } from "./controllers/devController";
 import { initPrayerTimeScheduler } from "./services/prayerTimeService";
 import logger from "./config/logger";
 import requestLogger from "./middleware/requestLogger";
+import { createCorsOptions } from "./config/cors";
+import { describeUploadError } from "./middleware/uploadExcel";
 import type { Server } from "http";
-// CORS allowlist. Trusted web origins come from CORS_ORIGINS (comma-separated).
-// Requests with no Origin header (native mobile apps, server-to-server, health
-// checks) are always allowed, as are the Capacitor/localhost origins the mobile
-// build uses. In non-production, any origin is reflected for developer convenience.
-const configuredOrigins = (process.env.CORS_ORIGINS || "")
-  .split(",")
-  .map((o) => o.trim())
-  .filter(Boolean);
-
-const alwaysAllowed = [
-  "capacitor://localhost",
-  "ionic://localhost",
-  "http://localhost",
-  "http://localhost:8100",
-  "http://localhost:5173",
-];
-
-const allowedOrigins = Array.from(
-  new Set([...configuredOrigins, ...alwaysAllowed]),
-);
-
-const corsOptions = {
-  origin: (
-    origin: string | undefined,
-    callback: (err: Error | null, allow?: boolean) => void,
-  ) => {
-    if (!origin) return callback(null, true);
-    if (process.env.NODE_ENV !== "production") return callback(null, true);
-    if (allowedOrigins.includes(origin)) return callback(null, true);
-    if (origin.endsWith(".up.railway.app")) return callback(null, true);
-    if (origin.endsWith(".vercel.app")) return callback(null, true);
-    return callback(null, true);
-  },
-};
 
 const app = express();
+// Railway terminates TLS at exactly one reverse proxy in front of this process.
+// Trusting one hop makes req.ip the real client address (from X-Forwarded-For),
+// so the per-IP rate limiters key on each client instead of the proxy's IP.
+// Do not use `true`: that would trust a client-supplied X-Forwarded-For chain.
+app.set("trust proxy", 1);
 let databaseReady = false;
 // Railway (and most PaaS hosts) assign their own port via process.env.PORT and
 // expect the app to bind to it; SERVER_PORT remains the local-dev override.
@@ -79,7 +53,7 @@ app.use(
 );
 
 // Middleware
-app.use(cors(corsOptions));
+app.use(cors(createCorsOptions()));
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || "1mb" }));
 app.use(requestLogger);
 
@@ -113,6 +87,14 @@ const authLimiter = rateLimit({
   message: { success: false, message: "Too many attempts, try again later." },
 });
 
+const refreshLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.REFRESH_RATE_LIMIT) || 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many session refresh requests, try again later." },
+});
+
 // Serve static assets (used in email templates to avoid base64 bloat)
 app.use(
   "/assets",
@@ -127,7 +109,12 @@ app.use("/users/verify-otp", authLimiter);
 app.use("/users/reset-password", authLimiter);
 app.use("/users/send-auth", authLimiter);
 app.use("/users/verfication-auth", authLimiter);
-app.use("/users/refresh", authLimiter);
+// Refresh needs a valid refresh token, so it is not brute-forceable the way
+// login/OTP are. It gets its own, much higher per-IP budget: a whole school
+// behind one NAT renews sessions here, and a 429 would log every pupil out.
+app.use("/users/refresh", refreshLimiter);
+app.use("/users/impersonation/exchange", authLimiter);
+app.use("/users/impersonate/exchange", authLimiter);
 
 // Define routes
 app.use("/users", user_route);
@@ -141,12 +128,18 @@ app.use("/admin", admin_routes);
 app.use("/mission", mission_routes);
 app.use("/app", app_routes);
 
-// /dev routes are mounted in all environments.
-// The password-bypass login endpoints inside devController guard themselves
-// with a NODE_ENV check and return 404 in production. The /dev/test-accounts
-// endpoint is intentionally available everywhere so the /test relationship
-// page works on Railway during the testing phase.
-app.use("/dev", dev_routes);
+// /dev issues tokens without a password, so it is mounted only when NODE_ENV
+// is explicitly "development" or "test". Fail closed: an unset or unexpected
+// NODE_ENV (e.g. a deployment that forgot it) leaves /dev unmounted (404).
+// devController re-checks the same condition per handler.
+//
+// Exception, testing phase: the client /test page reads GET /dev/test-accounts
+// in production too. It is read-only and returns no password or token, so it
+// is mounted unconditionally; login-as and /dev/users stay behind the gate.
+app.get("/dev/test-accounts", getTestAccounts);
+if (isDevEnvironment()) {
+  app.use("/dev", dev_routes);
+}
 
 
 app.get("/health/live", (_req, res) => {
@@ -206,6 +199,14 @@ app.use((err: any, req: Request, res: Response, next: NextFunction) => {
     stack: err?.stack,
     path: req.originalUrl,
   });
+  const uploadError = describeUploadError(err);
+  if (uploadError) {
+    return res.status(uploadError.status).json({
+      success: false,
+      code: uploadError.code,
+      message: uploadError.message,
+    });
+  }
   const status = err?.status || err?.statusCode || 500;
   res.status(status).json({
     success: false,
@@ -224,10 +225,44 @@ const startServer = async (): Promise<Server> => {
   initPrayerTimeScheduler();
   databaseReady = true;
 
-  return app.listen(PORT, () => {
+  // Listen with explicit socket backlog of 4096 to prevent connection drops during spikes
+  const server = app.listen(Number(PORT), "0.0.0.0", 4096, () => {
     logger.info(`Server is running on http://localhost:${PORT}`);
     logger.info(`Swagger docs available at http://localhost:${PORT}/api-docs`);
   });
+
+  // High-concurrency socket and timeout tuning
+  server.keepAliveTimeout = Number(process.env.KEEP_ALIVE_TIMEOUT_MS) || 65000;
+  server.headersTimeout = Number(process.env.HEADERS_TIMEOUT_MS) || 66000;
+  server.requestTimeout = Number(process.env.REQUEST_TIMEOUT_MS) || 30000;
+
+  // Graceful shutdown handling (SIGTERM & SIGINT)
+  const shutdown = async (signal: string) => {
+    logger.info(`Received ${signal}. Starting graceful shutdown...`);
+    databaseReady = false;
+
+    server.close(async () => {
+      logger.info("HTTP server closed. Draining database connection pool...");
+      try {
+        await sequelize.close();
+        logger.info("Database pool closed cleanly.");
+        process.exit(0);
+      } catch (err) {
+        logger.error("Error closing database pool:", { error: err });
+        process.exit(1);
+      }
+    });
+
+    setTimeout(() => {
+      logger.error("Forceful shutdown: connections failed to close in time.");
+      process.exit(1);
+    }, 10000).unref();
+  };
+
+  process.on("SIGTERM", () => shutdown("SIGTERM"));
+  process.on("SIGINT", () => shutdown("SIGINT"));
+
+  return server;
 };
 
 if (require.main === module) {
@@ -239,3 +274,4 @@ if (require.main === module) {
 }
 
 export { app, startServer };
+

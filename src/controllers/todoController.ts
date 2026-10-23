@@ -13,6 +13,7 @@ import MissionApprovalRequest from "../models/mission-approval-request.model";
 import StudentTodoDay from "../models/student-todo-day.model";
 import { addOrAssignTodo, ensureTodoDay, isCanonicalDate, utcGameplayDate, withDeadlockRetry } from "../services/studentTodoService";
 import logger from "../config/logger";
+import { requiresMissionApproval } from "../helpers/studentGameplayMode";
 
 const principal = (req: Request) => (req as Request & { user?: JwtPayload }).user;
 
@@ -22,7 +23,7 @@ export const listMyTodo = async (req: Request, res: Response) => {
     if (!user) return res.status(401).json({ message: "Unauthorized" });
     const student = await Student.findOne({ where: { userId: user.id } });
     if (!student) return res.status(404).json({ message: "Student not found" });
-    if (!student.classId) return res.status(400).json({ message: "Solo User missions use the personal To-Do" });
+    if (!requiresMissionApproval(student)) return res.status(400).json({ message: "Solo User missions use the personal To-Do" });
     const selectedDate = typeof req.query.date === "string" ? req.query.date : utcGameplayDate();
     const serverToday = utcGameplayDate();
     if (!isCanonicalDate(selectedDate)) return res.status(400).json({ message: "Invalid date; use YYYY-MM-DD" });
@@ -73,7 +74,7 @@ export const addMyTodo = async (req: Request, res: Response) => {
     if (!Number.isSafeInteger(taskId) || taskId <= 0) return res.status(400).json({ message: "Invalid taskId parameter" });
     const student = await Student.findOne({ where: { userId: user.id } });
     if (!student) return res.status(404).json({ message: "Student not found" });
-    if (!student.classId) return res.status(400).json({ message: "Solo User missions use the personal To-Do" });
+    if (!requiresMissionApproval(student)) return res.status(400).json({ message: "Solo User missions use the personal To-Do" });
     if (!(await Task.findByPk(taskId))) return res.status(404).json({ message: "Task not found" });
     const result = await withDeadlockRetry(() => Student.sequelize.transaction(async (transaction: any) => {
       await Student.findOne({ where: { id: student.id }, transaction, lock: transaction?.LOCK?.UPDATE });
@@ -196,8 +197,8 @@ async function runAssignmentBatch(
   for (const studentId of studentIds) {
     try {
       const student = await Student.findByPk(studentId);
-      if (!student) { results.push({ studentId, status: "not_found" }); continue; }
-      if (!(await authorize(student))) { results.push({ studentId, status: "unauthorized" }); continue; }
+      // Missing and foreign students answer alike, so ids cannot be probed.
+      if (!student || !(await authorize(student))) { results.push({ studentId, status: "unauthorized" }); continue; }
       const result = await withDeadlockRetry(() => Student.sequelize.transaction(async (transaction: any) => {
         const locked = await Student.findByPk(studentId, { transaction, lock: transaction?.LOCK?.UPDATE });
         if (!locked) throw new Error("Student not found");

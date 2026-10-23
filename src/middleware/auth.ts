@@ -28,8 +28,8 @@ const authenticateToken = async (
     const user = jwt.verify(token, secret) as JwtPayload;
 
     if (!user?.id) {
-      return res.status(403).json({
-        status: 403,
+      return res.status(401).json({
+        status: 401,
         code: "TOKEN_INVALID",
         message: "Token is invalid",
       });
@@ -38,7 +38,7 @@ const authenticateToken = async (
     // A correctly signed token is not enough: the account may have been
     // deleted by an administrator while the user still has the app open.
     const account = await User.findByPk(user.id, {
-      attributes: ["id", "email", "role", "tokenVersion", "isAccess"],
+      attributes: ["id", "email", "role", "tokenVersion", "isAccess", "organizationId"],
     });
     if (!account) {
       return res.status(401).json({
@@ -80,12 +80,14 @@ const authenticateToken = async (
       });
     }
 
-    (req as Request & { user?: JwtPayload }).user = {
+    (req as Request & { user?: JwtPayload; userAccount?: any }).user = {
       ...user,
       email: account.email,
       role: account.role,
       tokenVersion: account.tokenVersion || 0,
+      organizationId: account.organizationId ?? null,
     };
+    (req as Request & { userAccount?: any }).userAccount = account;
     next();
   } catch (error) {
     if (error instanceof Error) {
@@ -97,9 +99,11 @@ const authenticateToken = async (
           .json({ status: 401, code: "TOKEN_EXPIRED", message: "Token expired" });
       }
 
+      // 401 per RFC 6750 (invalid_token): the caller must re-authenticate.
+      // 403 stays reserved for a valid token whose role is not allowed.
       if (error.name === "JsonWebTokenError" || error.name === "NotBeforeError") {
-        return res.status(403).json({
-          status: 403,
+        return res.status(401).json({
+          status: 401,
           code: "TOKEN_INVALID",
           message: "Token is invalid",
         });

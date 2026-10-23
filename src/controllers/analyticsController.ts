@@ -63,17 +63,31 @@ const UNAVAILABLE_METRICS = {
 const overview = async (req: Request, res: Response) => {
   try {
     const [[people], [missions], [approvals], [firstCompletion]] = await Promise.all([
+      // Solo vs school is decided by ORGANISATION, not by class.
+      //
+      // This previously split on `classId IS NULL`, which counted an enrolled
+      // student who has no class yet as a Solo learner — inflating soloUsers,
+      // understating schoolStudents, and merging the two states the role model
+      // keeps apart: a Solo learner has no school by design, while an enrolled
+      // student without a class is a data-quality problem to fix. On the local
+      // database that mislabelled two of nineteen students.
       query(`
         SELECT
-          (SELECT COUNT(*) FROM Users)                                                       AS totalUsers,
-          (SELECT COUNT(*) FROM Students WHERE classId IS NULL)                              AS soloUsers,
-          (SELECT COUNT(*) FROM Students WHERE classId IS NOT NULL)                          AS schoolStudents,
-          (SELECT COUNT(*) FROM Teachers)                                                    AS teachers,
-          (SELECT COUNT(*) FROM Parents)                                                     AS parents,
-          (SELECT COUNT(*) FROM Admins WHERE organizationId IS NOT NULL)                     AS schoolAdmins,
-          (SELECT COUNT(*) FROM Admins WHERE organizationId IS NULL)                         AS superAdmins,
-          (SELECT COUNT(*) FROM Organizations)                                               AS organizations,
-          (SELECT COUNT(*) FROM Classes)                                                     AS classes
+          (SELECT COUNT(*) FROM Users)                                                        AS totalUsers,
+          (SELECT COUNT(*) FROM Users WHERE otpVerified = 1)                                  AS verifiedUsers,
+          (SELECT COUNT(*) FROM Users WHERE otpVerified = 0 OR otpVerified IS NULL)           AS unverifiedUsers,
+          (SELECT COUNT(*) FROM Users WHERE isAccess = 0)                                     AS disabledUsers,
+          (SELECT COUNT(*) FROM Users WHERE DATE(createdAt) = CURDATE())                      AS newUsersToday,
+          (SELECT COUNT(*) FROM Users WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 6 DAY))  AS newUsersThisWeek,
+          (SELECT COUNT(*) FROM Users WHERE createdAt >= DATE_SUB(CURDATE(), INTERVAL 29 DAY)) AS newUsersThisMonth,
+          (SELECT COUNT(*) FROM Students WHERE organizationId IS NULL)                        AS soloUsers,
+          (SELECT COUNT(*) FROM Students WHERE organizationId IS NOT NULL)                    AS schoolStudents,
+          (SELECT COUNT(*) FROM Teachers)                                                     AS teachers,
+          (SELECT COUNT(*) FROM Parents)                                                      AS parents,
+          (SELECT COUNT(*) FROM Admins WHERE organizationId IS NOT NULL)                      AS schoolAdmins,
+          (SELECT COUNT(*) FROM Admins WHERE organizationId IS NULL)                          AS superAdmins,
+          (SELECT COUNT(*) FROM Organizations)                                                AS organizations,
+          (SELECT COUNT(*) FROM Classes)                                                      AS classes
       `),
       query(`
         SELECT
@@ -105,6 +119,16 @@ const overview = async (req: Request, res: Response) => {
       data: {
         people: {
           totalUsers: Number(people.totalUsers || 0),
+          // Account verification state. `disabledUsers` is a separate axis:
+          // an account can be verified and still have access revoked.
+          verifiedUsers: Number(people.verifiedUsers || 0),
+          unverifiedUsers: Number(people.unverifiedUsers || 0),
+          disabledUsers: Number(people.disabledUsers || 0),
+          // Registrations, not activity. These are new rows in Users; calling
+          // them "active" would claim something the data does not say.
+          newUsersToday: Number(people.newUsersToday || 0),
+          newUsersThisWeek: Number(people.newUsersThisWeek || 0),
+          newUsersThisMonth: Number(people.newUsersThisMonth || 0),
           soloUsers: Number(people.soloUsers || 0),
           schoolStudents: Number(people.schoolStudents || 0),
           teachers: Number(people.teachers || 0),
@@ -177,7 +201,7 @@ const completions = async (req: Request, res: Response) => {
         SELECT st.id, st.date, st.createdAt AS completedAt, st.completionSource,
                s.id AS studentId, s.classId, s.organizationId, s.xp,
                u.firstName, u.lastName, u.email,
-               CASE WHEN s.classId IS NULL THEN 'solo' ELSE 'school' END AS studentType,
+               CASE WHEN s.organizationId IS NULL THEN 'solo' ELSE 'school' END AS studentType,
                o.name AS organizationName, c.classname AS className,
                t.id AS taskId, t.title AS missionTitle, tc.title AS categoryTitle,
                st.teacherId, st.parentId,
@@ -334,7 +358,7 @@ const users = async (req: Request, res: Response) => {
       `, replacements),
       query(`
         SELECT s.id AS studentId, u.firstName, u.lastName, s.xp,
-               CASE WHEN s.classId IS NULL THEN 'solo' ELSE 'school' END AS studentType,
+               CASE WHEN s.organizationId IS NULL THEN 'solo' ELSE 'school' END AS studentType,
                COUNT(*) AS completions
         FROM StudentTasks st
         JOIN Students s   ON s.id = st.studentId
@@ -351,17 +375,17 @@ const users = async (req: Request, res: Response) => {
       `, replacements),
       query(`
         SELECT
-          SUM(CASE WHEN s.classId IS NULL     THEN 1 ELSE 0 END) AS soloCompletions,
-          SUM(CASE WHEN s.classId IS NOT NULL THEN 1 ELSE 0 END) AS schoolCompletions,
-          COUNT(DISTINCT CASE WHEN s.classId IS NULL     THEN s.id END) AS soloActiveStudents,
-          COUNT(DISTINCT CASE WHEN s.classId IS NOT NULL THEN s.id END) AS schoolActiveStudents
+          SUM(CASE WHEN s.organizationId IS NULL     THEN 1 ELSE 0 END) AS soloCompletions,
+          SUM(CASE WHEN s.organizationId IS NOT NULL THEN 1 ELSE 0 END) AS schoolCompletions,
+          COUNT(DISTINCT CASE WHEN s.organizationId IS NULL     THEN s.id END) AS soloActiveStudents,
+          COUNT(DISTINCT CASE WHEN s.organizationId IS NOT NULL THEN s.id END) AS schoolActiveStudents
         FROM StudentTasks st
         JOIN Students s ON s.id = st.studentId
         WHERE st.completionStatus='Completed' AND st.date BETWEEN :from AND :to
       `, replacements),
       query(`
         SELECT s.id AS studentId, u.firstName, u.lastName, u.email,
-               CASE WHEN s.classId IS NULL THEN 'solo' ELSE 'school' END AS studentType,
+               CASE WHEN s.organizationId IS NULL THEN 'solo' ELSE 'school' END AS studentType,
                (SELECT MAX(date) FROM StudentTasks x WHERE x.studentId=s.id AND x.completionStatus='Completed') AS lastCompletionDate
         FROM Students s
         LEFT JOIN Users u ON u.id = s.userId
@@ -544,31 +568,48 @@ const assignments = async (req: Request, res: Response) => {
   try {
     const { from, to } = resolveRange(req);
     const [[status], bySource, [durations]] = await Promise.all([
+      // The counting unit is the assignment SOURCE row, not the To-Do item.
+      //
+      // This endpoint answers "what did teachers and parents assign", so a
+      // mission assigned by a teacher AND a parent is two assignments — one
+      // each — and appears once under each source. `status.total` therefore
+      // equals the sum of the per-source items, which is asserted in the
+      // integration suite so the semantic cannot drift silently.
+      //
+      // `StudentTodoDays` is deliberately not used: its rows include the
+      // 20260901000000 backfill, which represents historical completions
+      // rather than real assignment events, and counting them here would
+      // report invented assignments.
       query(`
         SELECT
-          SUM(status='todo')             AS active,
-          SUM(status='pending_approval') AS pendingApproval,
-          SUM(status='completed')        AS completed,
-          COUNT(*)                       AS total
-        FROM StudentTodoDays
-        WHERE missionDate BETWEEN :from AND :to
+          SUM(sti.status='todo')             AS active,
+          SUM(sti.status='pending_approval') AS pendingApproval,
+          SUM(sti.status='completed')        AS completed,
+          COUNT(*)                           AS total
+        FROM StudentTodoSources sts
+        JOIN StudentTodoItems sti ON sti.id = sts.todoItemId
+        WHERE sts.sourceType IN ('teacher','parent')
+          AND DATE(sts.createdAt) BETWEEN :from AND :to
       `, { from, to }),
       query(`
         SELECT sts.sourceType,
-               COUNT(DISTINCT d.id)           AS items,
-               SUM(d.status='completed')      AS completedItems
+               COUNT(*)                        AS items,
+               SUM(sti.status='completed')     AS completedItems
         FROM StudentTodoSources sts
-        JOIN StudentTodoDays d ON d.studentTodoItemId = sts.todoItemId
-        WHERE d.missionDate BETWEEN :from AND :to
+        JOIN StudentTodoItems sti ON sti.id = sts.todoItemId
+        WHERE sts.sourceType IN ('teacher','parent')
+          AND DATE(sts.createdAt) BETWEEN :from AND :to
         GROUP BY sts.sourceType
         ORDER BY items DESC
       `, { from, to }),
       query(`
-        SELECT AVG(TIMESTAMPDIFF(MINUTE, createdAt, completedAt)) AS avgAssignmentToCompletionMinutes,
+        SELECT AVG(TIMESTAMPDIFF(MINUTE, sts.createdAt, sti.completedAt)) AS avgAssignmentToCompletionMinutes,
                COUNT(*) AS sample
-        FROM StudentTodoDays
-        WHERE status='completed' AND completedAt IS NOT NULL
-          AND missionDate BETWEEN :from AND :to
+        FROM StudentTodoSources sts
+        JOIN StudentTodoItems sti ON sti.id = sts.todoItemId
+        WHERE sts.sourceType IN ('teacher','parent')
+          AND sti.status='completed' AND sti.completedAt IS NOT NULL
+          AND DATE(sts.createdAt) BETWEEN :from AND :to
       `, { from, to }),
     ]);
 
@@ -596,7 +637,8 @@ const assignments = async (req: Request, res: Response) => {
           : null,
         durationSample: Number(durations?.sample || 0),
         range: { from, to },
-        note: "To-Do data begins at the 20260901000000 migration; rows created by its backfill represent historical completions, not real assignment events.",
+        countingUnit: "assignment_source" as const,
+        note: "Counts durable teacher/parent assignment source rows, created from the 20260901000000 migration onward. A mission assigned by both a teacher and a parent counts once for each, so status totals equal the sum of per-source items. Assignment events before that cutover were never recorded and are not reconstructed.",
       },
     });
   } catch (error) {

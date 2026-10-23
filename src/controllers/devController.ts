@@ -3,27 +3,12 @@ import User from "../models/user.model";
 import logger from "../config/logger";
 import { signAccessToken } from "../helpers/tokens";
 
-// Emails that identify the test-account family
-const TEST_ACCOUNT_EMAILS = [
-  "admin.test@sanabel.local",
-  "teacher.test@sanabel.local",
-  "ahmed.hassan@sanabel.local",
-  "khaled.mahmoud@sanabel.local",
-  "adel.samir@sanabel.local",
-  "omar.ahmed@sanabel.local",
-  "lina.ahmed@sanabel.local",
-  "adam.khaled@sanabel.local",
-  "noor.khaled@sanabel.local",
-  "youssef.adel@sanabel.local",
-];
-
-const SHARED_TEST_PASSWORD = "Test#Sanabel2026!";
-const isProd = () => process.env.NODE_ENV === "production";
-
 // Everything in this controller is a local-development convenience only —
-// it issues login tokens without a password, so it must never respond
-// outside of a non-production environment.
-const isDevEnvironment = () => process.env.NODE_ENV !== "production";
+// it issues login tokens without a password. Fail closed: only an explicit
+// development/test NODE_ENV enables it, so a deployment that forgets to set
+// NODE_ENV does not expose it. index.ts applies the same gate to the mount.
+export const isDevEnvironment = () =>
+  process.env.NODE_ENV === "development" || process.env.NODE_ENV === "test";
 
 const listUsersForDevLogin = async (req: Request, res: Response) => {
   if (!isDevEnvironment()) {
@@ -65,6 +50,10 @@ const listUsersForDevLogin = async (req: Request, res: Response) => {
 };
 
 const loginAsUser = async (req: Request, res: Response) => {
+  if (!isDevEnvironment()) {
+    return res.status(404).json({ message: "Not found" });
+  }
+
   try {
     const userId = Number(req.params.userId);
     if (!userId) {
@@ -74,11 +63,6 @@ const loginAsUser = async (req: Request, res: Response) => {
     const user = await User.findByPk(userId);
     if (!user) {
       return res.status(404).json({ message: "User not found" });
-    }
-
-    // In production, allow quick-login for test accounts during the testing phase
-    if (isProd() && !TEST_ACCOUNT_EMAILS.includes(user.email)) {
-      return res.status(403).json({ message: "Quick login is only permitted for test accounts" });
     }
 
     const token = signAccessToken({
@@ -99,8 +83,11 @@ const loginAsUser = async (req: Request, res: Response) => {
 
 /**
  * GET /dev/test-accounts
- * Returns structured test account relationship data.
- * Available in all environments during testing phase.
+ * Returns structured test account relationship data for the client /test page.
+ * Mounted in every environment during the testing phase (index.ts), so it is
+ * read-only, lists only the fixed seeded test accounts, and never returns a
+ * password or token: the shared test password lives in the seed configuration.
+ * Passwordless login (/dev/login-as) stays development/test only.
  */
 const getTestAccounts = async (req: Request, res: Response) => {
   try {
@@ -164,7 +151,6 @@ const getTestAccounts = async (req: Request, res: Response) => {
           lastName: childUser.lastName,
           email: childUser.email,
           connectCode: st.connectCode,
-          password: SHARED_TEST_PASSWORD,
         });
       }
 
@@ -175,7 +161,6 @@ const getTestAccounts = async (req: Request, res: Response) => {
           firstName: parentUser.firstName,
           lastName: parentUser.lastName,
           email: parentUser.email,
-          password: SHARED_TEST_PASSWORD,
         },
         children,
       });
@@ -191,7 +176,6 @@ const getTestAccounts = async (req: Request, res: Response) => {
         firstName: adminUser.firstName,
         lastName: adminUser.lastName,
         email: adminUser.email,
-        password: SHARED_TEST_PASSWORD,
       } : null,
       teacher: teacherUser ? {
         userId: teacherUser.id,
@@ -199,10 +183,9 @@ const getTestAccounts = async (req: Request, res: Response) => {
         firstName: teacherUser.firstName,
         lastName: teacherUser.lastName,
         email: teacherUser.email,
-        password: SHARED_TEST_PASSWORD,
       } : null,
       families,
-      isProduction: false,
+      isProduction: !isDevEnvironment(),
     };
 
     return res.status(200).json({ success: true, data });

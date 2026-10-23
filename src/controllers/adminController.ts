@@ -17,11 +17,14 @@ import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
 import Organization, { OrganizationType } from "../models/oraganization.model";
 import Tree from "../models/tree.model";
+import Admin from "../models/admin.model";
 import { QueryTypes } from "sequelize";
+import { literal } from "@sequelize/core";
 import { signAccessToken, signRefreshToken } from "../helpers/tokens";
 import { generatePassword } from "../helpers/generatePassword";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
 import { getImportField } from "../helpers/importFieldLookup";
+import { ImportFailure, describeRowError, importRowNumber, rowFailure } from "../helpers/importRow";
 import {
   InvalidOptionalIdError,
   parseOptionalPositiveId,
@@ -32,8 +35,52 @@ import {
   resolveStudentRelationships,
   validateGradeForOrganization,
 } from "../helpers/organizationRelationships";
+import crypto from "crypto";
+import AdminImpersonationHandoff from "../models/admin-impersonation-handoff.model";
+import ImportRun from "../models/import-run.model";
+import { IMPORT_RUN_GRANULARITY_NOTE, recordImportRun } from "../helpers/importRunRecorder";
 
 const DEFAULT_RESET_PASSWORD = "changeme123";
+
+// Same shape the User model's isEmail validator accepts in practice; checked
+// up front so a bad address is a 400 naming the field, not a 500.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+// Every admin list is paged. Without a ceiling `?limit=100000` dumps a whole
+// table, and a negative page/limit reaches MySQL as a negative OFFSET (500).
+// Page is capped too: `?page=1e300` is finite but yields an unsafe OFFSET.
+// Anything that is not a plain positive safe integer falls back to the default.
+const MAX_PAGE_SIZE = 100;
+const MAX_PAGE = 100000;
+const parsePositiveInt = (value: unknown): number | null => {
+  const text = typeof value === "number" ? String(value) : typeof value === "string" ? value.trim() : "";
+  if (!/^\d+$/.test(text)) return null;
+  const parsed = Number(text);
+  return Number.isSafeInteger(parsed) && parsed >= 1 ? parsed : null;
+};
+const parsePagination = (page: unknown, limit: unknown, defaultLimit = 20) => {
+  const p = parsePositiveInt(page);
+  const l = parsePositiveInt(limit);
+  const pageNum = p === null ? 1 : Math.min(p, MAX_PAGE);
+  const limitNum = l === null ? defaultLimit : Math.min(l, MAX_PAGE_SIZE);
+  return { pageNum, limitNum, offset: (pageNum - 1) * limitNum };
+};
+
+// Optional numeric id filters from the query string. Absent or empty means
+// "no filter"; anything that is not a positive integer is a 400 rather than an
+// unvalidated value reaching the WHERE clause.
+class InvalidQueryParamError extends Error {
+  constructor(public readonly field: string, message?: string) {
+    super(message ?? `${field} must be a positive integer`);
+    this.name = "InvalidQueryParamError";
+  }
+}
+const parseQueryId = (value: unknown, field: string): number | undefined => {
+  if (value === undefined || value === "") return undefined;
+  const parsed = typeof value === "string" && /^\d+$/.test(value) ? Number(value) : NaN;
+  if (!Number.isSafeInteger(parsed) || parsed <= 0) throw new InvalidQueryParamError(field);
+  return parsed;
+};
 
 const persistStudentRelationships = async (
   studentId: number,
@@ -109,6 +156,8 @@ const isUserInAdminScope = async (
       transaction,
     });
     if (!parent) return false;
+    // Imported into this school (no child linked yet) — see listParents.
+    if (parent.organizationId === scope) return true;
     const count = await Student.count({
       where: { ParentId: parent.id, organizationId: scope } as any,
       transaction,
@@ -215,15 +264,18 @@ const listOrganizations = async (req: Request, res: Response) => {
 
     const where: any = {};
     if (search) where.name = { [Op.like]: `%${String(search)}%` };
-    if (type) where.type = type;
+    if (type) {
+      if (!(Object.values(OrganizationType) as unknown[]).includes(type)) {
+        return res.status(400).json({ message: "Invalid organization type filter" });
+      }
+      where.type = type;
+    }
 
     // School admins only ever see their own school
     const scope = getAdminScope(req);
     if (scope !== null) where.id = scope;
 
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 20;
-    const offset = (pageNum - 1) * limitNum;
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
 
     const { rows, count } = await Organization.findAndCountAll({
       where,
@@ -415,10 +467,13 @@ const listStudents = async (req: Request, res: Response) => {
     } = req.query;
 
     const where: any = {};
-    if (organizationId) where.organizationId = organizationId;
-    if (classId) where.classId = classId;
-    if (gradeId) where.gradeId = gradeId;
-    else if (grade) where.grade = grade;
+    const organizationIdFilter = parseQueryId(organizationId, "organizationId");
+    const classIdFilter = parseQueryId(classId, "classId");
+    const gradeIdFilter = parseQueryId(gradeId, "gradeId");
+    if (organizationIdFilter) where.organizationId = organizationIdFilter;
+    if (classIdFilter) where.classId = classIdFilter;
+    if (gradeIdFilter) where.gradeId = gradeIdFilter;
+    else if (grade) where.grade = String(grade);
 
     // School admins are locked to their own school regardless of query params
     const scope = getAdminScope(req);
@@ -433,9 +488,7 @@ const listStudents = async (req: Request, res: Response) => {
       ];
     }
 
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 20;
-    const offset = (pageNum - 1) * limitNum;
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
 
     const { rows, count } = await Student.findAndCountAll({
       where,
@@ -448,7 +501,7 @@ const listStudents = async (req: Request, res: Response) => {
           model: User,
           as: "user",
           attributes: ["firstName", "lastName", "email", "profileImg", "gender", "dateOfBirth"],
-          where: Object.keys(userWhere).length ? userWhere : undefined,
+          where: Reflect.ownKeys(userWhere).length ? userWhere : undefined,
           required: !!search,
         },
         {
@@ -487,6 +540,9 @@ const listStudents = async (req: Request, res: Response) => {
       limit: limitNum,
     });
   } catch (error) {
+    if (error instanceof InvalidQueryParamError) {
+      return res.status(400).json({ message: error.message, field: error.field });
+    }
     logger.error("Error in listStudents:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -753,7 +809,12 @@ const listUsers = async (req: Request, res: Response) => {
     const { search, role, verified, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
-    if (role) where.role = role;
+    if (role) {
+      if (typeof role !== "string" || !["Student", "Teacher", "Parent", "Admin"].includes(role)) {
+        return res.status(400).json({ message: "role must be one of Student, Teacher, Parent, Admin" });
+      }
+      where.role = role;
+    }
     if (verified === "true") where.isAccess = true;
     if (search) {
       where[Op.or] = [
@@ -799,9 +860,7 @@ const listUsers = async (req: Request, res: Response) => {
       where.id = { [Op.in]: scopedUserIds.length ? scopedUserIds : [0] };
     }
 
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 20;
-    const offset = (pageNum - 1) * limitNum;
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
 
     const { rows, count } = await User.findAndCountAll({
       where,
@@ -823,7 +882,8 @@ const listTeachers = async (req: Request, res: Response) => {
     const { search, organizationId, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
-    if (organizationId) where.organizationId = organizationId;
+    const organizationIdFilter = parseQueryId(organizationId, "organizationId");
+    if (organizationIdFilter) where.organizationId = organizationIdFilter;
 
     const scope = getAdminScope(req);
     if (scope !== null) where.organizationId = scope;
@@ -837,9 +897,7 @@ const listTeachers = async (req: Request, res: Response) => {
       ];
     }
 
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 20;
-    const offset = (pageNum - 1) * limitNum;
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
 
     const { rows, count } = await Teacher.findAndCountAll({
       where,
@@ -852,7 +910,7 @@ const listTeachers = async (req: Request, res: Response) => {
           model: User,
           as: "user",
           attributes: ["id", "firstName", "lastName", "email"],
-          where: Object.keys(userWhere).length ? userWhere : undefined,
+          where: Reflect.ownKeys(userWhere).length ? userWhere : undefined,
           required: !!search,
         },
         {
@@ -880,6 +938,9 @@ const listTeachers = async (req: Request, res: Response) => {
 
     return res.status(200).json({ data: rows, total: count, page: pageNum, limit: limitNum });
   } catch (error) {
+    if (error instanceof InvalidQueryParamError) {
+      return res.status(400).json({ message: error.message, field: error.field });
+    }
     logger.error("Error in listTeachers:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -898,11 +959,29 @@ const listParents = async (req: Request, res: Response) => {
       ];
     }
 
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 20;
-    const offset = (pageNum - 1) * limitNum;
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
+
+    // School admins see parents imported into their school
+    // (Parents.organizationId) and parents linked to one of its students.
+    const parentScope = getAdminScope(req);
+    const parentWhere =
+      parentScope !== null
+        ? {
+            [Op.or]: [
+              { organizationId: parentScope },
+              {
+                id: {
+                  [Op.in]: literal(
+                    `(SELECT \`ParentId\` FROM \`Students\` WHERE \`organizationId\` = ${Number(parentScope)} AND \`ParentId\` IS NOT NULL)`,
+                  ),
+                },
+              },
+            ],
+          }
+        : undefined;
 
     const { rows, count } = await Parent.findAndCountAll({
+      where: parentWhere as any,
       limit: limitNum,
       offset,
       order: [["id", "ASC"]],
@@ -912,19 +991,19 @@ const listParents = async (req: Request, res: Response) => {
           model: User,
           as: "user",
           attributes: ["id", "firstName", "lastName", "email"],
-          where: Object.keys(userWhere).length ? userWhere : undefined,
+          where: Reflect.ownKeys(userWhere).length ? userWhere : undefined,
           required: !!search,
         },
         {
           model: Student,
           as: "Students",
           attributes: ["id"],
-          // School admins only see parents linked to their school's students
+          // Only this school's children are listed for a school admin.
           where:
-            getAdminScope(req) !== null
-              ? { organizationId: getAdminScope(req) }
+            parentScope !== null
+              ? { organizationId: parentScope }
               : undefined,
-          required: getAdminScope(req) !== null,
+          required: false,
         },
       ],
     });
@@ -941,13 +1020,16 @@ const createUser = async (req: Request, res: Response) => {
     const {
       firstName,
       lastName,
-      email,
+      email: rawEmail,
       role,
       organizationId,
       classId,
       gradeId,
       grade,
     } = req.body;
+    // Normalize once (trim + lowercase, as signup does) so validation, the
+    // duplicate lookup and the stored value all use the same address.
+    const email = typeof rawEmail === "string" ? rawEmail.trim().toLowerCase() : rawEmail;
 
     if (!firstName || !email || !role) {
       return res.status(400).json({ message: "firstName, email and role are required" });
@@ -956,6 +1038,10 @@ const createUser = async (req: Request, res: Response) => {
     const validRoles = ["Student", "Teacher", "Parent", "Admin"];
     if (!validRoles.includes(role)) {
       return res.status(400).json({ message: `role must be one of ${validRoles.join(", ")}` });
+    }
+
+    if (typeof email !== "string" || !EMAIL_PATTERN.test(email)) {
+      return res.status(400).json({ message: "email must be a valid email address", field: "email" });
     }
 
     // School admins can only create members of their own school, never admins
@@ -989,6 +1075,21 @@ const createUser = async (req: Request, res: Response) => {
         return res.status(400).json({ message: "Target organization does not exist" });
       }
       resolvedOrganizationId = organization.id;
+    }
+
+    // Admin scope lives in the Admins row (AGENTS.md). An organizationId makes
+    // a School Admin; the console omits it only when the Super Admin picks the
+    // explicit "Super Admin" option, so absent/null/"" means global scope.
+    let adminOrganizationId: number | null = null;
+    if (role === "Admin") {
+      const parsedOrganizationId = parseOptionalPositiveId(organizationId, "organizationId");
+      if (parsedOrganizationId != null) {
+        const organization = await Organization.findByPk(parsedOrganizationId);
+        if (!organization) {
+          return res.status(400).json({ message: "Target organization does not exist" });
+        }
+        adminOrganizationId = organization.id;
+      }
     }
 
     let resolvedClassId: number | null = null;
@@ -1025,13 +1126,23 @@ const createUser = async (req: Request, res: Response) => {
           email,
           password: hashedPassword,
           role,
+          // Legacy compatibility copy only, kept equal to Admins.organizationId
+          // the way the seeder writes it.
+          ...(role === "Admin" ? { organizationId: adminOrganizationId } : {}),
           isAccess: true,
           otpVerified: true,
         },
         { transaction: t }
       );
 
-      if (role === "Student") {
+      if (role === "Admin") {
+        // Without this row checkAdmin falls back to a null scope, i.e. every
+        // "School Admin" created here silently became a Super Admin.
+        await Admin.create(
+          { userId: userRecord.id, organizationId: adminOrganizationId },
+          { transaction: t }
+        );
+      } else if (role === "Student") {
         const connectCode = await generateUniqueConnectCode();
         const student = await Student.create(
           {
@@ -1098,6 +1209,13 @@ const createUser = async (req: Request, res: Response) => {
     if (error?.name === "SequelizeUniqueConstraintError") {
       return res.status(409).json({ message: "Email already in use" });
     }
+    if (error?.name === "SequelizeValidationError") {
+      const first = Array.isArray(error.errors) ? error.errors[0] : undefined;
+      return res.status(400).json({
+        message: first?.message || "Invalid account details",
+        field: first?.path,
+      });
+    }
     logger.error("Error in createUser:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -1157,6 +1275,17 @@ const updateUser = async (req: Request, res: Response) => {
           if (!organization) {
             return res.status(400).json({ message: "Target organization does not exist" });
           }
+        }
+        // Admins.organizationId is authoritative (AGENTS.md). Write it in this
+        // transaction, creating the row for legacy admins that lack one, and
+        // keep the Users.organizationId compatibility copy equal to it.
+        const [adminRow, createdAdminRow] = await Admin.findOrCreate({
+          where: { userId: userRecord.id },
+          defaults: { userId: userRecord.id, organizationId: requestedOrganizationId },
+          transaction,
+        });
+        if (!createdAdminRow && adminRow.organizationId !== requestedOrganizationId) {
+          await adminRow.update({ organizationId: requestedOrganizationId }, { transaction });
         }
         userUpdateData.organizationId = requestedOrganizationId;
       }
@@ -1350,16 +1479,16 @@ const listClasses = async (req: Request, res: Response) => {
     const { search, organizationId, gradeId, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
-    if (organizationId) where.organizationId = organizationId;
-    if (gradeId) where.gradeId = gradeId;
+    const organizationIdFilter = parseQueryId(organizationId, "organizationId");
+    const gradeIdFilter = parseQueryId(gradeId, "gradeId");
+    if (organizationIdFilter) where.organizationId = organizationIdFilter;
+    if (gradeIdFilter) where.gradeId = gradeIdFilter;
     if (search) where.classname = { [Op.like]: `%${String(search)}%` };
 
     const scope = getAdminScope(req);
     if (scope !== null) where.organizationId = scope;
 
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 20;
-    const offset = (pageNum - 1) * limitNum;
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
 
     const { rows, count } = await Class.findAndCountAll({
       where,
@@ -1377,6 +1506,9 @@ const listClasses = async (req: Request, res: Response) => {
 
     return res.status(200).json({ data: rows, total: count, page: pageNum, limit: limitNum });
   } catch (error) {
+    if (error instanceof InvalidQueryParamError) {
+      return res.status(400).json({ message: error.message, field: error.field });
+    }
     logger.error("Error in listClasses:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -1609,7 +1741,8 @@ const listGrades = async (req: Request, res: Response) => {
     const { search, organizationId, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
-    if (organizationId) where.organizationId = organizationId;
+    const organizationIdFilter = parseQueryId(organizationId, "organizationId");
+    if (organizationIdFilter) where.organizationId = organizationIdFilter;
     if (search) where.name = { [Op.like]: `%${String(search)}%` };
 
     // School admins see the shared/global grades plus their own school's
@@ -1619,9 +1752,7 @@ const listGrades = async (req: Request, res: Response) => {
       where[Op.or] = [{ organizationId: scope }, { organizationId: null }];
     }
 
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 20;
-    const offset = (pageNum - 1) * limitNum;
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
 
     const { rows, count } = await Grade.findAndCountAll({
       where,
@@ -1640,6 +1771,9 @@ const listGrades = async (req: Request, res: Response) => {
       limit: limitNum,
     });
   } catch (error) {
+    if (error instanceof InvalidQueryParamError) {
+      return res.status(400).json({ message: error.message, field: error.field });
+    }
     logger.error("Error in listGrades:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -1705,53 +1839,81 @@ const createGrade = async (req: Request, res: Response) => {
 const importGrades = async (req: Request, res: Response) => {
   const processedData: any = req.processedData;
   const successfulEntries: any[] = [];
-  const failedEntries: any[] = [];
+  const failedEntries: ImportFailure[] = [];
 
-  // School admins import grades into their own school only
+  // School admins import grades into their own school only. A Super Admin
+  // names the school in the `school` column; with no school the grade is a
+  // shared (global) grade. Lookups never cross into another school.
   const scope = getAdminScope(req);
+  const orgCache = new Map<string, Promise<Organization | null>>();
+  const targetOrganizationIds = new Set<number>();
 
   try {
     for (const sheet in processedData) {
-      const all_data = processedData[sheet];
-      for (const data of all_data) {
+      const all_data: any[] = Array.isArray(processedData[sheet]) ? processedData[sheet] : [];
+      for (let rowIndex = 0; rowIndex < all_data.length; rowIndex += 1) {
+        const data = all_data[rowIndex];
+        const rowNumber = importRowNumber(data, rowIndex);
         try {
-          const nameInput = getImportField(data, "name", "Name");
-          const gradeName = String(nameInput || "").trim().toLowerCase();
+          const gradeName = String(getImportField(data, "name", "grade") ?? "").trim().toLowerCase();
           if (!gradeName) {
-            failedEntries.push({ row: data, error: "Missing grade name" });
+            failedEntries.push(rowFailure(rowNumber, "REQUIRED_FIELD_MISSING", "name is required", "name"));
             continue;
           }
 
-          let grade = await Grade.findOne({
-            where:
-              scope !== null
-                ? { name: gradeName, organizationId: scope }
-                : { name: gradeName },
-          });
-          const alreadyExisted = !!grade;
-          if (!grade) {
-            grade = await Grade.create({
-              name: gradeName,
-              organizationId: scope,
-            });
+          const orgName = String(getImportField(data, "school") ?? "").trim().toLowerCase();
+          let organizationId: number | null = scope;
+          if (scope !== null) {
+            if (orgName) {
+              const own = await Organization.findByPk(scope);
+              if (!own || own.name.trim().toLowerCase() !== orgName) {
+                failedEntries.push(rowFailure(rowNumber, "FORBIDDEN_ORGANIZATION", "school admins can import only into their own school", "school"));
+                continue;
+              }
+            }
+          } else if (orgName) {
+            if (!orgCache.has(orgName)) {
+              orgCache.set(orgName, Organization.findOne({ where: { name: orgName } }));
+            }
+            const organization = await orgCache.get(orgName)!;
+            if (!organization) {
+              failedEntries.push(rowFailure(rowNumber, "ORGANIZATION_NOT_FOUND", "school not found; create it before importing", "school"));
+              continue;
+            }
+            organizationId = organization.id;
           }
 
+          let grade = await Grade.findOne({ where: { name: gradeName, organizationId } });
+          const alreadyExisted = !!grade;
+          if (!grade) {
+            grade = await Grade.create({ name: gradeName, organizationId });
+          }
+          if (organizationId !== null) targetOrganizationIds.add(organizationId);
+
           successfulEntries.push({
-            row: data,
+            rowNumber,
             message: alreadyExisted ? "Grade already existed" : "Grade created",
             gradeId: grade.id,
+            organizationId,
           });
         } catch (error) {
-          failedEntries.push({
-            row: data,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          failedEntries.push(describeRowError(rowNumber, error));
+          logger.error("Grade import row failed", { error, rowNumber });
         }
       }
     }
 
+    await recordImportRun(req, {
+      entityType: "grades",
+      succeeded: successfulEntries.length,
+      failed: failedEntries.length,
+      targetOrganizationId:
+        targetOrganizationIds.size === 1 ? [...targetOrganizationIds][0] : null,
+    });
+
     res.json({
       message: "Grade import completed",
+      total: successfulEntries.length + failedEntries.length,
       successCount: successfulEntries.length,
       failureCount: failedEntries.length,
       successfulEntries,
@@ -1759,7 +1921,7 @@ const importGrades = async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error("Error processing Excel file (grade import):", { error });
-    res.status(500).json({ message: "Internal server error", error });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -1902,10 +2064,13 @@ const listScores = async (req: Request, res: Response) => {
     } = req.query;
 
     const where: any = {};
-    if (organizationId) where.organizationId = organizationId;
-    if (classId) where.classId = classId;
-    if (gradeId) where.gradeId = gradeId;
-    else if (grade) where.grade = grade;
+    const organizationIdFilter = parseQueryId(organizationId, "organizationId");
+    const classIdFilter = parseQueryId(classId, "classId");
+    const gradeIdFilter = parseQueryId(gradeId, "gradeId");
+    if (organizationIdFilter) where.organizationId = organizationIdFilter;
+    if (classIdFilter) where.classId = classIdFilter;
+    if (gradeIdFilter) where.gradeId = gradeIdFilter;
+    else if (grade) where.grade = String(grade);
 
     const scope = getAdminScope(req);
     if (scope !== null) where.organizationId = scope;
@@ -1920,9 +2085,7 @@ const listScores = async (req: Request, res: Response) => {
       ];
     }
 
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 20;
-    const offset = (pageNum - 1) * limitNum;
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
 
     const dir = String(sortDir).toUpperCase() === "ASC" ? "ASC" : "DESC";
     let order: any[] = [];
@@ -1963,7 +2126,7 @@ const listScores = async (req: Request, res: Response) => {
         model: User,
         as: "user",
         attributes: ["firstName", "lastName", "email", "profileImg", "gender", "dateOfBirth"],
-        where: Object.keys(userWhere).length ? userWhere : undefined,
+        where: Reflect.ownKeys(userWhere).length ? userWhere : undefined,
         required: !!search,
       },
       {
@@ -2028,31 +2191,25 @@ const listScores = async (req: Request, res: Response) => {
       count = fallbackResult.count;
     }
 
-    const allStudents = await Student.findAll({
-      attributes: ["xp", "snabelYellow", "snabelBlue", "snabelRed", "level"],
-      where: scope !== null ? { organizationId: scope } : undefined,
-      raw: true,
-    });
+    const [aggResult] = await Student.sequelize!.query(
+      `SELECT
+        COALESCE(SUM(xp), 0) AS totalXp,
+        COALESCE(SUM(snabelYellow + snabelBlue + snabelRed), 0) AS totalSanabel,
+        COALESCE(MAX(level), 1) AS maxLevel,
+        COALESCE(SUM(CASE WHEN xp > 0 OR snabelYellow > 0 OR snabelBlue > 0 OR snabelRed > 0 OR level > 1 THEN 1 ELSE 0 END), 0) AS playingStudents
+      FROM Students
+      ${scope !== null ? "WHERE organizationId = :scope" : ""}`,
+      {
+        type: QueryTypes.SELECT,
+        replacements: scope !== null ? { scope } : {},
+      },
+    );
 
-    let totalXp = 0;
-    let totalSanabel = 0;
-    let maxLevel = 0;
-    let playingStudents = 0;
-
-    for (const s of allStudents) {
-      const xpVal = Number(s.xp || 0);
-      const yellow = Number(s.snabelYellow || 0);
-      const blue = Number(s.snabelBlue || 0);
-      const red = Number(s.snabelRed || 0);
-      const lvl = Number(s.level || 1);
-
-      totalXp += xpVal;
-      totalSanabel += yellow + blue + red;
-      if (lvl > maxLevel) maxLevel = lvl;
-      if (xpVal > 0 || yellow > 0 || blue > 0 || red > 0 || lvl > 1) {
-        playingStudents++;
-      }
-    }
+    const agg = (aggResult as any) || {};
+    const totalXp = Number(agg.totalXp || 0);
+    const totalSanabel = Number(agg.totalSanabel || 0);
+    const maxLevel = Number(agg.maxLevel || 1);
+    const playingStudents = Number(agg.playingStudents || 0);
 
     return res.status(200).json({
       data: rows,
@@ -2068,6 +2225,9 @@ const listScores = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    if (error instanceof InvalidQueryParamError) {
+      return res.status(400).json({ message: error.message, field: error.field });
+    }
     logger.error("Error in listScores:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -2089,14 +2249,15 @@ const listTaskHistory = async (req: Request, res: Response) => {
       limit = "20",
     } = req.query;
 
-    const pageNum = Number(page) || 1;
-    const limitNum = Number(limit) || 20;
-    const offset = (pageNum - 1) * limitNum;
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
 
     const studentWhere: any = {};
-    if (organizationId) studentWhere.organizationId = organizationId;
-    if (classId) studentWhere.classId = classId;
-    if (gradeId) studentWhere.gradeId = gradeId;
+    const organizationIdFilter = parseQueryId(organizationId, "organizationId");
+    const classIdFilter = parseQueryId(classId, "classId");
+    const gradeIdFilter = parseQueryId(gradeId, "gradeId");
+    if (organizationIdFilter) studentWhere.organizationId = organizationIdFilter;
+    if (classIdFilter) studentWhere.classId = classIdFilter;
+    if (gradeIdFilter) studentWhere.gradeId = gradeIdFilter;
 
     const scope = getAdminScope(req);
     if (scope !== null) studentWhere.organizationId = scope;
@@ -2278,12 +2439,15 @@ const listTaskHistory = async (req: Request, res: Response) => {
       },
     });
   } catch (error) {
+    if (error instanceof InvalidQueryParamError) {
+      return res.status(400).json({ message: error.message, field: error.field });
+    }
     logger.error("Error in listTaskHistory:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
 
-const impersonateStudent = async (req: Request, res: Response) => {
+const createImpersonationHandoff = async (req: Request, res: Response) => {
   try {
     const actingAdmin = (req as Request & { user: JwtPayload | undefined }).user;
     if (!actingAdmin) {
@@ -2327,47 +2491,658 @@ const impersonateStudent = async (req: Request, res: Response) => {
       return res.status(403).json({ message: "Forbidden: Student does not belong to your organization" });
     }
 
-    // Sign student JWT access token and refresh token
-    const token = signAccessToken({
-      id: targetUser.id,
-      email: targetUser.email,
-      role: targetUser.role,
-      tokenVersion: targetUser.tokenVersion,
-    });
-    const refreshToken = signRefreshToken({
-      id: targetUser.id,
-      email: targetUser.email,
-      role: targetUser.role,
-      tokenVersion: targetUser.tokenVersion,
+    // Generate cryptographic handoff code (32 bytes entropy = 256 bits)
+    const code = crypto.randomBytes(32).toString("hex");
+    const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+    const ttlSeconds = 90;
+    const expiresAt = new Date(Date.now() + ttlSeconds * 1000);
+
+    await AdminImpersonationHandoff.create({
+      codeHash,
+      actorAdminUserId: actingAdmin.id,
+      targetUserId: targetUser.id,
+      targetStudentId: student.id,
+      organizationId: student.organizationId ?? null,
+      expiresAt,
+      usedAt: null,
     });
 
-    logger.info("Admin impersonated student", {
-      adminId: actingAdmin.id,
+    logger.info("ADMIN_IMPERSONATION_STARTED", {
+      actorAdminUserId: actingAdmin.id,
       adminEmail: actingAdmin.email,
-      studentId: student.id,
+      targetStudentId: student.id,
       targetUserId: targetUser.id,
-      targetEmail: targetUser.email,
+      organizationId: student.organizationId,
+      expiresAt: expiresAt.toISOString(),
     });
+
+    const studentName = `${targetUser.firstName || ""} ${targetUser.lastName || ""}`.trim() || "Student";
 
     return res.status(200).json({
       status: 200,
-      message: "Impersonation token generated successfully",
+      message: "Impersonation handoff code generated successfully",
       data: {
-        token,
-        refreshToken,
-        user: {
-          id: targetUser.id,
-          studentId: student.id,
-          email: targetUser.email,
-          role: targetUser.role,
-          firstName: targetUser.firstName,
-          lastName: targetUser.lastName,
-          profileImg: targetUser.profileImg,
+        code,
+        expiresAt: expiresAt.toISOString(),
+        ttlSeconds,
+        student: {
+          id: student.id,
+          name: studentName,
         },
       },
     });
   } catch (error) {
-    logger.error("Error in impersonateStudent:", { error });
+    logger.error("Error in createImpersonationHandoff:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const impersonateStudent = createImpersonationHandoff;
+
+// ---------------------------------------------------------------------------
+// Import analytics  (GET /admin/import-analytics)
+// Gate: checkAdmin - School Admin sees their org only, Super Admin sees all.
+// ---------------------------------------------------------------------------
+const getImportAnalytics = async (req: Request, res: Response) => {
+  try {
+    const scope = getAdminScope(req);
+    const baseWhere: any = {};
+    if (scope !== null) baseWhere.organizationId = scope;
+
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+
+    const [todayCount, monthCount, totalsResult, recentRuns] = await Promise.all([
+      ImportRun.count({ where: { ...baseWhere, createdAt: { [Op.gte]: todayStart } } }),
+      ImportRun.count({ where: { ...baseWhere, createdAt: { [Op.gte]: monthStart } } }),
+      ImportRun.findAll({
+        where: baseWhere,
+        attributes: [
+          [ImportRun.sequelize!.fn("SUM", ImportRun.sequelize!.col("totalRows")), "totalRows"],
+          [ImportRun.sequelize!.fn("SUM", ImportRun.sequelize!.col("succeeded")), "totalSucceeded"],
+          [ImportRun.sequelize!.fn("SUM", ImportRun.sequelize!.col("failed")), "totalFailed"],
+        ],
+        raw: true,
+      }),
+      ImportRun.findAll({
+        where: baseWhere,
+        order: [["createdAt", "DESC"]],
+        limit: 10,
+        include: [
+          { model: User, as: "adminUser", attributes: ["firstName", "lastName", "email"] },
+          { model: Organization, as: "organization", attributes: ["name"] },
+        ],
+      }),
+    ]);
+
+    const totals = (totalsResult as any[])[0] || {};
+
+    return res.status(200).json({
+      data: {
+        todayCount,
+        monthCount,
+        totalRowsProcessed: Number(totals.totalRows) || 0,
+        totalSucceeded: Number(totals.totalSucceeded) || 0,
+        totalFailed: Number(totals.totalFailed) || 0,
+        granularity: "batch",
+        note: IMPORT_RUN_GRANULARITY_NOTE,
+        recentRuns: recentRuns.map((r: any) => ({
+          id: r.id,
+          adminName: `${r.adminUser?.firstName || ""} ${r.adminUser?.lastName || ""}`.trim() || "Admin",
+          adminEmail: r.adminUser?.email || "",
+          organizationName: r.organization?.name || null,
+          entityType: r.entityType,
+          totalRows: r.totalRows,
+          succeeded: r.succeeded,
+          failed: r.failed,
+          createdAt: r.createdAt,
+        })),
+      },
+    });
+  } catch (error) {
+    logger.error("Error in getImportAnalytics:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Data quality counters (GET /admin/data-quality)
+// Gate: Super Admin only
+// ---------------------------------------------------------------------------
+const getDataQuality = async (req: Request, res: Response) => {
+  try {
+    const adminProfileModel = (await import("../models/admin.model")).default;
+
+    const [
+      schoolStudentsWithoutClass,
+      schoolStudentsWithoutGrade,
+      classesWithoutTeacher,
+      allAdminUsers,
+      allProfiles,
+      orphanedStudents,
+    ] = await Promise.all([
+      Student.count({
+        where: {
+          organizationId: { [Op.ne]: null },
+          classId: null,
+        },
+      }),
+      Student.count({
+        where: {
+          organizationId: { [Op.ne]: null },
+          gradeId: null,
+        },
+      }),
+      Class.count({
+        where: {
+          teacherId: null,
+        },
+      }),
+      User.findAll({
+        where: { role: "Admin" } as any,
+        attributes: ["id"],
+        raw: true,
+      }),
+      adminProfileModel.findAll({
+        attributes: ["userId"],
+        raw: true,
+      }),
+      Student.sequelize!.query(
+        `SELECT COUNT(*) AS cnt FROM Students s LEFT JOIN Users u ON u.id = s.userId WHERE u.id IS NULL`,
+        { type: QueryTypes.SELECT }
+      ),
+    ]);
+
+    const profiledIds = new Set((allProfiles as any[]).map((p) => p.userId));
+    const adminUsersWithoutAdminProfile = (allAdminUsers as any[]).filter(
+      (u) => !profiledIds.has(u.id)
+    ).length;
+    const orphanedCount = Number((orphanedStudents as any[])[0]?.cnt) || 0;
+
+    return res.status(200).json({
+      data: {
+        schoolStudentsWithoutClass,
+        schoolStudentsWithoutGrade,
+        classesWithoutTeacher,
+        adminUsersWithoutAdminProfile,
+        orphanedStudents: orphanedCount,
+      },
+    });
+  } catch (error) {
+    logger.error("Error in getDataQuality:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// Data quality detail (GET /admin/data-quality/detail)
+// Gate: Super Admin only
+// ---------------------------------------------------------------------------
+const getDataQualityDetail = async (req: Request, res: Response) => {
+  try {
+    const { issue, page = "1", limit = "20", organizationId: orgFilter } = req.query;
+    const orgFilterId = parseQueryId(orgFilter, "organizationId");
+    const { pageNum, limitNum, offset } = parsePagination(page, limit);
+
+    let rows: any[] = [];
+    let total = 0;
+
+    if (issue === "school_student_no_class") {
+      const where: any = { organizationId: { [Op.ne]: null }, classId: null };
+      if (orgFilterId) where.organizationId = orgFilterId;
+      const { rows: found, count } = await Student.findAndCountAll({
+        where,
+        include: [
+          { model: User, as: "user", attributes: ["firstName", "lastName", "email"] },
+          { model: Organization, as: "organization", attributes: ["id", "name"] },
+        ],
+        limit: limitNum,
+        offset,
+        order: [["id", "DESC"]],
+      });
+      rows = found;
+      total = count;
+    } else if (issue === "school_student_no_grade") {
+      const where: any = { organizationId: { [Op.ne]: null }, gradeId: null };
+      if (orgFilterId) where.organizationId = orgFilterId;
+      const { rows: found, count } = await Student.findAndCountAll({
+        where,
+        include: [
+          { model: User, as: "user", attributes: ["firstName", "lastName", "email"] },
+          { model: Organization, as: "organization", attributes: ["id", "name"] },
+        ],
+        limit: limitNum,
+        offset,
+        order: [["id", "DESC"]],
+      });
+      rows = found;
+      total = count;
+    } else if (issue === "class_no_teacher") {
+      const where: any = { teacherId: null };
+      if (orgFilterId) where.organizationId = orgFilterId;
+      const { rows: found, count } = await Class.findAndCountAll({
+        where,
+        include: [{ model: Organization, as: "organization", attributes: ["id", "name"] }],
+        limit: limitNum,
+        offset,
+        order: [["updatedAt", "DESC"]],
+      });
+      rows = found;
+      total = count;
+    } else if (issue === "admin_no_profile") {
+      const allAdminUsers = await User.findAll({
+        where: { role: "Admin" } as any,
+        attributes: ["id", "firstName", "lastName", "email", "createdAt"],
+      });
+      const adminProfileModel = (await import("../models/admin.model")).default;
+      const allProfiles = await adminProfileModel.findAll({ attributes: ["userId"] });
+      const profiledIds = new Set(allProfiles.map((a: any) => a.userId));
+      const unprofiled = allAdminUsers.filter((u) => !profiledIds.has(u.id));
+      total = unprofiled.length;
+      rows = unprofiled.slice(offset, offset + limitNum);
+    } else {
+      return res.status(400).json({ message: "Unknown issue type" });
+    }
+
+    return res.status(200).json({ data: rows, total, page: pageNum, limit: limitNum });
+  } catch (error) {
+    if (error instanceof InvalidQueryParamError) {
+      return res.status(400).json({ message: error.message, field: error.field });
+    }
+    logger.error("Error in getDataQualityDetail:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// School admin dashboard  (GET /admin/school-dashboard)
+// Gate: checkAdmin - School Admin gets scoped, Super Admin gets global.
+// ---------------------------------------------------------------------------
+const getSchoolAdminDashboard = async (req: Request, res: Response) => {
+  try {
+    const scope = getAdminScope(req);
+    const orgWhere: any = scope !== null ? { organizationId: scope } : {};
+
+    const now = new Date();
+    const todayStart = new Date(now);
+    todayStart.setHours(0, 0, 0, 0);
+    const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+
+    // Every query below is either a COUNT over one school or a LIMITed feed.
+    // Twelve bounded queries in one round trip, so the page needs one request
+    // and MySQL sees no unbounded scan.
+    const [
+      studentCount,
+      teacherCount,
+      classCount,
+      pendingApprovals,
+      completionsToday,
+      completionsThisWeek,
+      importRunCount,
+      gradeCount,
+      newStudentsToday,
+      newStudentsThisWeek,
+      assignmentSources,
+      recentCompletions,
+      recentApprovals,
+    ] = await Promise.all([
+      Student.count({ where: orgWhere }),
+      Teacher.count({ where: orgWhere }),
+      Class.count({ where: orgWhere }),
+      Student.sequelize!.query(
+        scope !== null
+          ? `SELECT COUNT(*) AS cnt FROM MissionApprovalRequests mar
+             JOIN Students s ON s.id = mar.studentId
+             WHERE mar.status = 'pending' AND s.organizationId = :scope`
+          : `SELECT COUNT(*) AS cnt FROM MissionApprovalRequests WHERE status = 'pending'`,
+        { type: QueryTypes.SELECT, replacements: scope !== null ? { scope } : {} },
+      ),
+      StudentTask.count({
+        where: { createdAt: { [Op.gte]: todayStart } },
+        ...(scope !== null
+          ? { include: [{ model: Student, as: "Student", where: { organizationId: scope }, attributes: [], required: true }] }
+          : {}),
+      }),
+      StudentTask.count({
+        where: { createdAt: { [Op.gte]: weekAgo } },
+        ...(scope !== null
+          ? { include: [{ model: Student, as: "Student", where: { organizationId: scope }, attributes: [], required: true }] }
+          : {}),
+      }),
+      ImportRun.count({ where: scope !== null ? { organizationId: scope } : {} }),
+      // Grades this school administers. The acting admin has no grade of their
+      // own; this counts records they manage.
+      Grade.count({ where: orgWhere }),
+      Student.count({ where: { ...orgWhere, createdAt: { [Op.gte]: todayStart } } as any }),
+      Student.count({ where: { ...orgWhere, createdAt: { [Op.gte]: weekAgo } } as any }),
+      // Teacher/parent assignment SOURCE rows for this school's students. Same
+      // counting unit as the global assignments analytics: an item assigned by
+      // both a teacher and a parent is two assignments.
+      Student.sequelize!.query(
+        scope !== null
+          ? `SELECT COUNT(*) AS cnt
+             FROM StudentTodoSources sts
+             JOIN StudentTodoItems sti ON sti.id = sts.todoItemId
+             JOIN Students s ON s.id = sti.studentId
+             WHERE sts.sourceType IN ('teacher','parent') AND s.organizationId = :scope`
+          : `SELECT COUNT(*) AS cnt
+             FROM StudentTodoSources
+             WHERE sourceType IN ('teacher','parent')`,
+        { type: QueryTypes.SELECT, replacements: scope !== null ? { scope } : {} },
+      ),
+      // Recent feeds, bounded at ten rows each.
+      Student.sequelize!.query(
+        `SELECT st.id, st.createdAt, st.completionSource,
+                CONCAT_WS(' ', u.firstName, u.lastName) AS studentName,
+                t.title AS missionTitle
+         FROM StudentTasks st
+         JOIN Students s ON s.id = st.studentId
+         LEFT JOIN Users u ON u.id = s.userId
+         LEFT JOIN Tasks t ON t.id = st.taskId
+         WHERE st.completionStatus = 'Completed'
+           ${scope !== null ? 'AND s.organizationId = :scope' : ''}
+         ORDER BY st.createdAt DESC
+         LIMIT 10`,
+        { type: QueryTypes.SELECT, replacements: scope !== null ? { scope } : {} },
+      ),
+      Student.sequelize!.query(
+        `SELECT mar.id, mar.status, mar.createdAt, mar.missionDate, mar.approvedByType,
+                CONCAT_WS(' ', u.firstName, u.lastName) AS studentName,
+                t.title AS missionTitle
+         FROM MissionApprovalRequests mar
+         JOIN Students s ON s.id = mar.studentId
+         LEFT JOIN Users u ON u.id = s.userId
+         LEFT JOIN Tasks t ON t.id = mar.missionId
+         WHERE 1 = 1
+           ${scope !== null ? 'AND s.organizationId = :scope' : ''}
+         ORDER BY mar.createdAt DESC
+         LIMIT 10`,
+        { type: QueryTypes.SELECT, replacements: scope !== null ? { scope } : {} },
+      ),
+    ]);
+
+    return res.status(200).json({
+      data: {
+        organizationId: scope,
+        students: studentCount,
+        teachers: teacherCount,
+        classes: classCount,
+        grades: gradeCount,
+        pendingApprovals: Number((pendingApprovals as any[])[0]?.cnt) || 0,
+        completionsToday,
+        completionsThisWeek,
+        newStudentsToday,
+        newStudentsThisWeek,
+        // Assignment source rows, not distinct To-Do items. Named so the
+        // counting unit travels with the number.
+        assignmentSources: Number((assignmentSources as any[])[0]?.cnt) || 0,
+        // Import batches of up to 50 rows, not uploaded files.
+        totalImportBatches: importRunCount,
+        totalImportRuns: importRunCount,
+        recentCompletions,
+        recentApprovals,
+      },
+    });
+  } catch (error) {
+    logger.error("Error in getSchoolAdminDashboard:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ---------------------------------------------------------------------------
+// School warnings  (GET /admin/school-data-quality)
+// Gate: checkAdmin. Scope: the acting admin's own organization, taken from
+// `Admins.organizationId` — never from the request.
+//
+// This is the School Admin's answer to "what is broken in MY school". It is a
+// separate endpoint from the Super Admin's `/admin/data-quality` rather than
+// the same one filtered, because filtering a global query in the client is not
+// a scope boundary.
+//
+// What is NOT counted, because it is valid data:
+//   - a Solo learner with no organization, class or grade. This endpoint only
+//     ever looks inside one organization, so a Solo learner cannot appear in
+//     it at all.
+//   - the acting admin's own missing grade or class. A School Admin has
+//     neither by design; they administer many of both. Nothing here reads or
+//     reports an admin's own academic fields.
+// ---------------------------------------------------------------------------
+const getSchoolDataQuality = async (req: Request, res: Response) => {
+  try {
+    const scope = getAdminScope(req);
+
+    // A Super Admin has no single school to report on. Sending them the whole
+    // platform under a "my school" shape would misrepresent the numbers, so
+    // they are pointed at the global endpoint instead.
+    if (scope === null) {
+      return res.status(400).json({
+        message: "This endpoint reports one school. Use /admin/data-quality for the platform view.",
+      });
+    }
+
+    const staleApprovalDays = 7;
+    const staleCutoff = new Date();
+    staleCutoff.setDate(staleCutoff.getDate() - staleApprovalDays);
+
+    const [
+      studentsWithoutClass,
+      studentsWithoutGrade,
+      classesWithoutTeacher,
+      studentsWithoutUser,
+      classesWithoutGrade,
+      staleApprovalRows,
+      failedImportRows,
+    ] = await Promise.all([
+      // Enrolled in THIS school and missing a class. `organizationId: scope`
+      // is what makes a Solo learner structurally unable to appear here.
+      Student.count({ where: { organizationId: scope, classId: null } as any }),
+      Student.count({ where: { organizationId: scope, gradeId: null } as any }),
+      Class.count({ where: { organizationId: scope, teacherId: null } as any }),
+      Student.count({ where: { organizationId: scope, userId: null } as any }),
+      Class.count({ where: { organizationId: scope, gradeId: null } as any }),
+      Student.sequelize!.query(
+        `SELECT COUNT(*) AS cnt FROM MissionApprovalRequests mar
+         JOIN Students s ON s.id = mar.studentId
+         WHERE mar.status = 'pending'
+           AND s.organizationId = :scope
+           AND mar.createdAt < :cutoff`,
+        { type: QueryTypes.SELECT, replacements: { scope, cutoff: staleCutoff } },
+      ),
+      // Import batches for this school that refused at least one row. Counts
+      // only — `ImportRuns` stores no row contents by design.
+      ImportRun.findAll({
+        where: { organizationId: scope, failed: { [Op.gt]: 0 } } as any,
+        attributes: ["id", "entityType", "totalRows", "succeeded", "failed", "createdAt"],
+        order: [["createdAt", "DESC"]],
+        limit: 10,
+      }),
+    ]);
+
+    const oldPendingApprovals = Number((staleApprovalRows as any[])[0]?.cnt) || 0;
+    const failedImports = failedImportRows.length;
+
+    const counts = {
+      studentsWithoutClass,
+      studentsWithoutGrade,
+      classesWithoutTeacher,
+      classesWithoutGrade,
+      studentsWithoutUser,
+      oldPendingApprovals,
+      failedImportBatches: failedImports,
+    };
+
+    return res.status(200).json({
+      data: {
+        organizationId: scope,
+        counts,
+        totalWarnings: Object.values(counts).reduce((sum, value) => sum + value, 0),
+        staleApprovalThresholdDays: staleApprovalDays,
+        recentFailedImports: failedImportRows.map((run: any) => ({
+          id: run.id,
+          entityType: run.entityType,
+          totalRows: run.totalRows,
+          succeeded: run.succeeded,
+          failed: run.failed,
+          createdAt: run.createdAt,
+        })),
+        notes: {
+          soloLearners:
+            "Solo learners have no school, class or grade by design and are never counted here.",
+          adminAcademics:
+            "A School Admin has no grade or class of their own. Admin accounts are not inspected by this endpoint.",
+          importGranularity:
+            "Failed import entries are batches of up to 50 rows, not uploaded files. Row-level failures are not stored.",
+        },
+      },
+    });
+  } catch (error) {
+    logger.error("Error in getSchoolDataQuality:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+// ── Leaderboard settings ─────────────────────────────────────────────────────
+
+/**
+ * GET /admin/leaderboard-settings
+ * GET /admin/leaderboard-settings/:orgId  (Super Admin only for specific org)
+ *
+ * School Admin: returns their own organization's settings.
+ * Super Admin:  returns all organizations' settings (paginated list) or a
+ *               single organization when :orgId is supplied.
+ */
+const getLeaderboardSettings = async (req: Request, res: Response) => {
+  const request = req as Request & { adminOrganizationId?: number | null };
+  const schoolOrgId = request.adminOrganizationId;
+  const isSchoolAdmin = schoolOrgId !== null && schoolOrgId !== undefined;
+
+  try {
+    if (isSchoolAdmin) {
+      const org = await Organization.findByPk(schoolOrgId!, {
+        attributes: ["id", "name", "leaderboardScope", "leaderboardLimit", "hideZeroXpStudents"],
+      });
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+      return res.status(200).json({ organizations: [org] });
+    }
+
+    // Super Admin: list all or fetch one.
+    const { orgId } = req.params;
+    if (orgId) {
+      const org = await Organization.findByPk(orgId, {
+        attributes: ["id", "name", "leaderboardScope", "leaderboardLimit", "hideZeroXpStudents"],
+      });
+      if (!org) return res.status(404).json({ message: "Organization not found" });
+      return res.status(200).json({ organizations: [org] });
+    }
+
+    const page = Math.max(Number(req.query.page) || 1, 1);
+    const limit = Math.min(Math.max(Number(req.query.limit) || 20, 1), 100);
+    const offset = (page - 1) * limit;
+
+    const { count, rows } = await Organization.findAndCountAll({
+      attributes: ["id", "name", "leaderboardScope", "leaderboardLimit", "hideZeroXpStudents"],
+      limit,
+      offset,
+      order: [["name", "ASC"]],
+    });
+
+    return res.status(200).json({
+      organizations: rows,
+      total: count,
+      page,
+      limit,
+    });
+  } catch (error) {
+    logger.error("Error in getLeaderboardSettings:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+const VALID_SCOPES = ["all_school", "same_grade", "same_class"] as const;
+
+/**
+ * PUT /admin/leaderboard-settings/:orgId
+ *
+ * School Admin can only update their own organization (the server enforces this;
+ * the :orgId in the URL is verified against their scope).
+ * Super Admin can update any organization.
+ *
+ * Body fields (all optional — only supplied fields are changed):
+ *   leaderboardScope: "all_school" | "same_grade" | "same_class"
+ *   leaderboardLimit: number (1–500)
+ *   hideZeroXpStudents: boolean
+ */
+const updateLeaderboardSettings = async (req: Request, res: Response) => {
+  const request = req as Request & { adminOrganizationId?: number | null };
+  const schoolOrgId = request.adminOrganizationId;
+  const isSchoolAdmin = schoolOrgId !== null && schoolOrgId !== undefined;
+
+  const targetOrgId = Number(req.params.orgId);
+  if (!targetOrgId || isNaN(targetOrgId)) {
+    return res.status(400).json({ message: "Invalid organization id" });
+  }
+
+  // School Admin can only edit their own school.
+  if (isSchoolAdmin && targetOrgId !== schoolOrgId) {
+    return res.status(403).json({ message: "You can only update your own organization's settings." });
+  }
+
+  const { leaderboardScope, leaderboardLimit, hideZeroXpStudents } = req.body as {
+    leaderboardScope?: string;
+    leaderboardLimit?: number;
+    hideZeroXpStudents?: boolean;
+  };
+
+  const updates: Record<string, unknown> = {};
+
+  if (leaderboardScope !== undefined) {
+    if (!(VALID_SCOPES as readonly string[]).includes(leaderboardScope)) {
+      return res.status(400).json({
+        message: `leaderboardScope must be one of: ${VALID_SCOPES.join(", ")}`,
+      });
+    }
+    updates.leaderboardScope = leaderboardScope;
+  }
+
+  if (leaderboardLimit !== undefined) {
+    const lim = Number(leaderboardLimit);
+    if (!Number.isInteger(lim) || lim < 1 || lim > 500) {
+      return res.status(400).json({ message: "leaderboardLimit must be an integer between 1 and 500" });
+    }
+    updates.leaderboardLimit = lim;
+  }
+
+  if (hideZeroXpStudents !== undefined) {
+    if (typeof hideZeroXpStudents !== "boolean") {
+      return res.status(400).json({ message: "hideZeroXpStudents must be a boolean" });
+    }
+    updates.hideZeroXpStudents = hideZeroXpStudents;
+  }
+
+  if (Object.keys(updates).length === 0) {
+    return res.status(400).json({ message: "No valid fields supplied for update" });
+  }
+
+  try {
+    const org = await Organization.findByPk(targetOrgId);
+    if (!org) return res.status(404).json({ message: "Organization not found" });
+
+    await org.update(updates);
+
+    return res.status(200).json({
+      message: "Leaderboard settings updated",
+      organization: {
+        id: org.id,
+        name: org.name,
+        leaderboardScope: org.leaderboardScope,
+        leaderboardLimit: org.leaderboardLimit,
+        hideZeroXpStudents: org.hideZeroXpStudents,
+      },
+    });
+  } catch (error) {
+    logger.error("Error in updateLeaderboardSettings:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };
@@ -2403,4 +3178,13 @@ export {
   listScores,
   listTaskHistory,
   impersonateStudent,
+  createImpersonationHandoff,
+  getImportAnalytics,
+  getDataQuality,
+  getDataQualityDetail,
+  getSchoolAdminDashboard,
+  getSchoolDataQuality,
+  getLeaderboardSettings,
+  updateLeaderboardSettings,
+  parsePagination,
 };

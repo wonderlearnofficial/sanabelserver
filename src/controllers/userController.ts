@@ -1,6 +1,9 @@
 import { Request, Response, NextFunction } from "express";
+import crypto from "crypto";
+import { Op } from "sequelize";
 import User from "../models/user.model";
 import logger from "../config/logger";
+import AdminImpersonationHandoff from "../models/admin-impersonation-handoff.model";
 
 import Student from "../models/student.model";
 import Teacher from "../models/teacher.model";
@@ -41,8 +44,25 @@ import {
 
 const jwt = require("jsonwebtoken");
 
+// How long a verified reset OTP may be spent on /users/reset-password.
+const RESET_WINDOW_MS = 10 * 60 * 1000;
+
+// Shared shape check for the public auth endpoints: a missing/empty field is a
+// 400 that names it, never a Sequelize "where: { email: undefined }" 500.
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const isNonEmptyString = (value: unknown): value is string =>
+  typeof value === "string" && value.trim().length > 0;
+
 const login = async (req: Request, res: Response) => {
-  const { email, password } = req.body;
+  const { email, password } = req.body ?? {};
+
+  if (!isNonEmptyString(email) || !isNonEmptyString(password)) {
+    return res.status(400).json({
+      status: 400,
+      code: "MISSING_CREDENTIALS",
+      message: "Email and password are required",
+    });
+  }
 
   try {
     // Find the user by email
@@ -64,8 +84,20 @@ const login = async (req: Request, res: Response) => {
       });
     }
 
+    // Verified email whose signup stopped before the password step: there is
+    // nothing to compare against (bcrypt throws on null), so say so plainly.
+    if (!account.password) {
+      return res.status(409).json({
+        status: 409,
+        code: "ACCOUNT_SETUP_INCOMPLETE",
+        message: "Account setup not completed. Finish signing up before logging in.",
+      });
+    }
+
     // Check if password is correct
-    if (!bcrypt.compareSync(password, account.password)) {
+    // Check if password is correct asynchronously (non-blocking)
+    const isMatch = await bcrypt.compare(password, account.password);
+    if (!isMatch) {
       return res.status(401).json({
         status: 401,
         message: "Incorrect email or password",
@@ -146,7 +178,6 @@ const login = async (req: Request, res: Response) => {
     return res.status(500).json({
       status: 500,
       message: "An error occurred during login",
-      error: error.message,
     });
   }
 };
@@ -166,7 +197,11 @@ const registration = async (req: Request, res: Response) => {
       gradeId,
       grade,
       profileImg,
-    } = req.body;
+    } = req.body ?? {};
+
+    if (!isNonEmptyString(email) || !isNonEmptyString(password)) {
+      return res.status(400).json({ message: "Email and password are required" });
+    }
 
     const checkValidation = await User.findOne({ where: { email } });
 
@@ -186,6 +221,11 @@ const registration = async (req: Request, res: Response) => {
       return res.status(403).json({
         message: "Email is already registered. Login or use another email.",
       });
+    }
+    // Public signup may only create the self-service roles. Any other value
+    // (notably "Admin") would otherwise be written to Users.role as-is.
+    if (!["Student", "Teacher", "Parent"].includes(role)) {
+      return res.status(400).json({ message: "role must be one of Student, Teacher, Parent" });
     }
     const hashedPassword = bcrypt.hashSync(password, 10);
 
@@ -295,12 +335,16 @@ const registration = async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error("Registration error:", { error });
-    return res.status(500).json({ message: "Registration failed", error });
+    return res.status(500).json({ message: "Registration failed" });
   }
 };
 
 const sendOTP = async (req: Request, res: Response) => {
-  const { email } = req.body;
+  const { email } = req.body ?? {};
+
+  if (!isNonEmptyString(email) || !EMAIL_PATTERN.test(email.trim())) {
+    return res.status(400).json({ status: 400, message: "A valid email is required" });
+  }
 
   try {
     // Find user by email
@@ -313,8 +357,9 @@ const sendOTP = async (req: Request, res: Response) => {
     const otp = generateOTP();
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000); // 5 minutes from now
 
-    // Update user with OTP and expiry
-    await user.update({ resetOTP: otp, otpExpiry });
+    // Update user with OTP and expiry. A new code revokes any earlier
+    // verification, so an old verified flag cannot be used with it.
+    await user.update({ resetOTP: otp, otpExpiry, otpVerified: false });
 
     // Send OTP to user via email
     await sendEmail({
@@ -332,7 +377,6 @@ const sendOTP = async (req: Request, res: Response) => {
     return res.status(500).json({
       status: 500,
       message: "Error sending OTP",
-      error,
     });
   }
 };
@@ -376,9 +420,15 @@ const verifyOTP = async (req: Request, res: Response) => {
       });
     }
 
-    // OTP is valid, mark the user as verified and clear the failure counter
+    // OTP is valid, mark the user as verified and clear the failure counter.
+    // The code is single use, and the verification itself only stays good
+    // for a short reset window (checked by resetPassword via otpExpiry).
     await clearOtpFailures(user);
-    await user.update({ otpVerified: true });
+    await user.update({
+      otpVerified: true,
+      resetOTP: null,
+      otpExpiry: new Date(Date.now() + RESET_WINDOW_MS),
+    });
 
     return res.status(200).json({
       status: 200,
@@ -389,13 +439,19 @@ const verifyOTP = async (req: Request, res: Response) => {
     return res.status(500).json({
       status: 500,
       message: "Error verifying OTP",
-      error,
     });
   }
 };
 
 const resetPassword = async (req: Request, res: Response) => {
-  const { email, newPassword } = req.body;
+  const { email, newPassword } = req.body ?? {};
+
+  if (!isNonEmptyString(email) || !isNonEmptyString(newPassword)) {
+    return res.status(400).json({
+      status: 400,
+      message: "Email and newPassword are required",
+    });
+  }
 
   try {
     // Find user by email
@@ -404,8 +460,9 @@ const resetPassword = async (req: Request, res: Response) => {
       return res.status(404).json({ status: 404, message: "User not found" });
     }
 
-    // Check if OTP was verified recently
-    if (!user.otpVerified) {
+    // Check if OTP was verified recently: the flag only counts inside the
+    // reset window verifyOTP opened, so a stale verification cannot be used.
+    if (!user.otpVerified || !user.otpExpiry || user.otpExpiry <= new Date()) {
       return res.status(403).json({
         status: 403,
         message:
@@ -413,15 +470,28 @@ const resetPassword = async (req: Request, res: Response) => {
       });
     }
 
-    // Hash the new password and update user record
+    // Hash the new password and update user record. Conditional on the
+    // flag still being set, so check-and-clear is one atomic statement and a
+    // verification can be spent exactly once even by concurrent requests.
     const hashedPassword = bcrypt.hashSync(newPassword, 10);
-    await user.update({
-      password: hashedPassword,
-      resetOTP: null,
-      otpExpiry: null,
-      otpVerified: false, // Clear the OTP verification flag
-      tokenVersion: (user.tokenVersion || 0) + 1,
-    });
+    const updateResult: any = await User.update(
+      {
+        password: hashedPassword,
+        resetOTP: null,
+        otpExpiry: null,
+        otpVerified: false, // Clear the OTP verification flag
+        tokenVersion: (user.tokenVersion || 0) + 1,
+      },
+      { where: { id: user.id, otpVerified: true } },
+    );
+    const affected = Array.isArray(updateResult) ? updateResult[0] : updateResult;
+    if (!affected) {
+      return res.status(403).json({
+        status: 403,
+        message:
+          "OTP not verified. Please verify OTP before resetting password.",
+      });
+    }
 
     return res.status(200).json({
       status: 200,
@@ -432,7 +502,6 @@ const resetPassword = async (req: Request, res: Response) => {
     return res.status(500).json({
       status: 500,
       message: "Error resetting password",
-      error,
     });
   }
 };
@@ -451,11 +520,12 @@ const updatePassword = async (req: Request, res: Response) => {
 
   const { old_password, new_password } = req.body;
 
-  if (!bcrypt.compareSync(old_password, userRecord.password)) {
+  const isMatch = await bcrypt.compare(old_password, userRecord.password);
+  if (!isMatch) {
     return res.status(500).json({ message: "Incorrect current password" });
   }
 
-  const hashedPassword = bcrypt.hashSync(new_password, 10);
+  const hashedPassword = await bcrypt.hash(new_password, 10);
   await userRecord.update({
     password: hashedPassword,
     tokenVersion: (userRecord.tokenVersion || 0) + 1,
@@ -473,6 +543,17 @@ const markGuideSeen = async (req: Request, res: Response) => {
 
   if (!user) {
     return res.status(404).json({ message: "User data not found in request" });
+  }
+
+  // An impersonated session belongs to an admin looking at the account, not to
+  // its owner. Marking a guide seen here would silently destroy onboarding the
+  // real user never received, so the write is refused rather than scoped.
+  if (user.imp === true) {
+    return res.status(403).json({
+      status: 403,
+      code: "IMPERSONATED_SESSION",
+      message: "An impersonated session cannot change this user's guide state",
+    });
   }
 
   if (!guideId || typeof guideId !== "string") {
@@ -563,6 +644,9 @@ const refreshAccessToken = async (req: Request, res: Response) => {
       email: user.email,
       role: user.role,
       tokenVersion: user.tokenVersion,
+      // Preserved across renewal: refreshing an impersonated session must not
+      // hand back an ordinary token with the impersonation marker dropped.
+      imp: payload.imp === true,
     };
     const token = signAccessToken(tokenUser);
     // Rotate the refresh token on every renewal. This gives active sessions a
@@ -680,6 +764,160 @@ const unsubscribePushNotification = async (req: Request, res: Response) => {
   }
 };
 
+const exchangeImpersonationHandoff = async (req: Request, res: Response) => {
+  try {
+    const { code } = req.body || {};
+    if (!code || typeof code !== "string") {
+      return res
+        .status(400)
+        .json({ status: 400, message: "Handoff code is required" });
+    }
+
+    const codeHash = crypto.createHash("sha256").update(code).digest("hex");
+    const now = new Date();
+
+    // Atomically attempt to claim the code
+    const [updatedCount] = await AdminImpersonationHandoff.update(
+      { usedAt: now },
+      {
+        where: {
+          codeHash,
+          usedAt: null,
+          expiresAt: { [Op.gt]: now },
+        },
+      }
+    );
+
+    if (updatedCount === 0) {
+      // Find out why it failed to update
+      const handoff = await AdminImpersonationHandoff.findOne({
+        where: { codeHash },
+      });
+
+      if (!handoff) {
+        return res.status(401).json({
+          status: 401,
+          code: "INVALID_CODE",
+          message: "Invalid or nonexistent impersonation handoff code",
+        });
+      }
+
+      if (handoff.usedAt) {
+        return res.status(409).json({
+          status: 409,
+          code: "CODE_ALREADY_USED",
+          message: "This impersonation handoff code has already been redeemed",
+        });
+      }
+
+      if (handoff.expiresAt && handoff.expiresAt <= now) {
+        return res.status(401).json({
+          status: 401,
+          code: "CODE_EXPIRED",
+          message: "This impersonation handoff code has expired",
+        });
+      }
+
+      return res.status(401).json({
+        status: 401,
+        code: "INVALID_CODE",
+        message: "Unable to redeem impersonation handoff code",
+      });
+    }
+
+    // Successfully claimed! Fetch the record
+    const handoff = await AdminImpersonationHandoff.findOne({
+      where: { codeHash },
+    });
+
+    if (!handoff) {
+      return res.status(404).json({
+        status: 404,
+        message: "Handoff record not found after update",
+      });
+    }
+
+    const user = await User.findByPk(handoff.targetUserId);
+    if (!user) {
+      return res.status(404).json({
+        status: 404,
+        message: "Target user not found",
+      });
+    }
+
+    const student = await Student.findByPk(handoff.targetStudentId);
+
+    // Sync challenges if student
+    if (student) {
+      const allChallenges = await Challenge.findAll();
+      const studentChallenges = await StudentChallenge.findAll({
+        where: { studentId: student.id },
+      });
+
+      if (studentChallenges.length !== allChallenges.length) {
+        const existingChallengeIds = studentChallenges.map(
+          (sc: any) => sc.challengeId,
+        );
+        const missingChallenges = allChallenges.filter(
+          (challenge: any) => !existingChallengeIds.includes(challenge.id),
+        );
+
+        if (missingChallenges.length > 0) {
+          const newStudentChallenges = missingChallenges.map((challenge: any) => ({
+            studentId: student.id,
+            challengeId: challenge.id,
+            completionStatus: "NotCompleted",
+            pointOfStudent: 0,
+          }));
+
+          await StudentChallenge.bulkCreate(newStudentChallenges);
+        }
+      }
+    }
+
+    const tokenUser = {
+      id: user.id,
+      email: user.email,
+      role: user.role,
+      tokenVersion: user.tokenVersion,
+      // Marks every token minted through impersonation. Endpoints that write
+      // the target account's own onboarding state refuse a marked session, so
+      // an admin looking at a Student can never consume that Student's guides.
+      imp: true,
+    };
+    const token = signAccessToken(tokenUser);
+    const refreshToken = signRefreshToken(tokenUser);
+
+    if (typeof res.setHeader === "function") {
+      res.setHeader("Cache-Control", "no-store");
+    }
+    return res.status(200).json({
+      status: 200,
+      message: "Impersonation session established successfully",
+      data: {
+        user: {
+          id: user.id,
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
+          role: user.role,
+          tokenVersion: user.tokenVersion,
+          studentId: student ? student.id : null,
+          token,
+          refreshToken,
+          isImpersonated: true,
+          impersonatedByAdminId: handoff.actorAdminUserId,
+        },
+      },
+    });
+  } catch (error) {
+    logger.error("Error exchanging impersonation handoff:", { error });
+    return res
+      .status(500)
+      .json({ status: 500, message: "Internal Server Error" });
+  }
+};
+
 export {
   login,
   registration,
@@ -692,4 +930,6 @@ export {
   logout,
   subscribePushNotification,
   unsubscribePushNotification,
+  exchangeImpersonationHandoff,
 };
+

@@ -9,7 +9,9 @@ import logger from "../config/logger";
 export const getAppVersion = async (req: Request, res: Response): Promise<void> => {
   try {
     const rawPlatform = ((req.query.platform as string) || "android").toLowerCase();
-    const platform = rawPlatform.includes("ios") ? "ios" : "android";
+    // web is a documented platform of its own; anything unrecognised keeps
+    // the historical android default.
+    const platform = rawPlatform.includes("ios") ? "ios" : rawPlatform === "web" ? "web" : "android";
 
     let platformConfig: AppConfig | null = null;
     let globalConfig: AppConfig | null = null;

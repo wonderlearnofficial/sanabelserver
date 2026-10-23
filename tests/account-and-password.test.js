@@ -149,19 +149,27 @@ test("resetPassword requires OTP verification before resetting", async () => {
     "OTP not verified. Please verify OTP before resetting password."
   );
 
-  // Case B: User has verified OTP (otpVerified is true) -> successfully resets
+  // Case B: User has verified OTP (otpVerified is true, still inside the
+  // reset window) -> successfully resets via one conditional UPDATE
   const verifiedUser = {
+    id: 21,
     email: "reset@test.com",
     otpVerified: true,
     password: "oldHash",
-    resetOTP: "1234",
-    otpExpiry: new Date(),
+    resetOTP: null,
+    otpExpiry: new Date(Date.now() + 60_000),
     tokenVersion: 4,
     async update(fields) {
       Object.assign(this, fields);
     },
   };
   User.findOne = async () => verifiedUser;
+  User.update = async (fields, { where }) => {
+    // Only spends the verification while the flag is still set
+    if (where.id !== verifiedUser.id || verifiedUser.otpVerified !== where.otpVerified) return [0];
+    Object.assign(verifiedUser, fields);
+    return [1];
+  };
 
   const resSuccess = makeResponse();
   await resetPassword(
@@ -174,6 +182,29 @@ test("resetPassword requires OTP verification before resetting", async () => {
   assert.equal(verifiedUser.resetOTP, null);
   assert.equal(verifiedUser.tokenVersion, 5);
   assert.ok(bcrypt.compareSync("NewSecurePassword123", verifiedUser.password));
+
+  // Case C: the same verification cannot be spent twice (double tap / race)
+  User.findOne = async () => ({ ...verifiedUser, otpVerified: true, otpExpiry: new Date(Date.now() + 60_000) });
+  const resReplay = makeResponse();
+  await resetPassword(
+    { body: { email: "reset@test.com", newPassword: "AnotherPassword123" } },
+    resReplay
+  );
+  assert.equal(resReplay.statusCode, 403);
+
+  // Case D: a verification older than the reset window is refused
+  User.findOne = async () => ({ ...verifiedUser, otpVerified: true, otpExpiry: new Date(Date.now() - 1000) });
+  const resStale = makeResponse();
+  await resetPassword(
+    { body: { email: "reset@test.com", newPassword: "AnotherPassword123" } },
+    resStale
+  );
+  assert.equal(resStale.statusCode, 403);
+
+  // Case E: an empty body is a 400 naming the fields, not a database error
+  const resEmpty = makeResponse();
+  await resetPassword({ body: {} }, resEmpty);
+  assert.equal(resEmpty.statusCode, 400);
 });
 
 test("updatePassword validates current password before applying new password", async () => {

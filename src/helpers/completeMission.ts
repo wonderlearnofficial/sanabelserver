@@ -8,6 +8,7 @@ import StudentChallenge from "../models/student-challenge.model";
 import MissionApprovalRequest, { ApprovalStatus } from "../models/mission-approval-request.model";
 import logger from "../config/logger";
 import { completionKey, findCompletion, reconcileCompletedTodo } from "../services/studentTodoService";
+import { requiresMissionApproval } from "./studentGameplayMode";
 
 export type MissionCompletionSource = "solo_self" | "approval_teacher" | "approval_parent" | "teacher_direct" | "parent_direct";
 
@@ -38,10 +39,10 @@ export async function completeMissionForStudent({
 
   const existing = await findCompletion(studentId, taskId, missionDate, transaction);
   if (existing) {
-    const todo = student.classId ? await reconcileCompletedTodo({ studentId, taskId, date: missionDate, studentTask: existing,
+    const todo = requiresMissionApproval(student) ? await reconcileCompletedTodo({ studentId, taskId, date: missionDate, studentTask: existing,
       completionSource: existing.completionSource || completionSource,
       completedById: existing.teacherId || existing.parentId || approverId, transaction }) : null;
-    if (student.classId) await reconcilePendingRequests(studentId, taskId, missionDate, approverId, approverType, transaction);
+    if (requiresMissionApproval(student)) await reconcilePendingRequests(studentId, taskId, missionDate, approverId, approverType, transaction);
     return { student, studentTask: existing, todo, alreadyCompleted: true, rewardsGranted: false };
   }
 
@@ -90,9 +91,9 @@ export async function completeMissionForStudent({
     await row.save({ transaction });
   }
   await student.save({ transaction });
-  const todo = student.classId ? await reconcileCompletedTodo({ studentId, taskId, date: missionDate, studentTask,
+  const todo = requiresMissionApproval(student) ? await reconcileCompletedTodo({ studentId, taskId, date: missionDate, studentTask,
     completionSource, completedById: approverId, transaction }) : null;
-  if (student.classId) await reconcilePendingRequests(studentId, taskId, missionDate, approverId, approverType, transaction, approvalRequestId);
+  if (requiresMissionApproval(student)) await reconcilePendingRequests(studentId, taskId, missionDate, approverId, approverType, transaction, approvalRequestId);
   logger.info("Mission completion committed", { studentId, taskId, missionDate, completionSource });
   return { student, studentTask, todo, alreadyCompleted: false, rewardsGranted: true };
 }

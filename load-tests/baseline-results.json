@@ -1,0 +1,352 @@
+[
+  {
+    "name": "Smoke Test (20 VUs)",
+    "elapsedSec": "31.4",
+    "vus": "default",
+    "requests": 1140,
+    "rps": 36.7,
+    "p50": 193.9,
+    "p90": 203.5,
+    "p95": 217.3,
+    "p99": 544,
+    "max": 544,
+    "avg": 199.5,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 320.4,
+      "rssMb": 431.9,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.2
+    }
+  },
+  {
+    "name": "Group A (Public Infra: /health/live)",
+    "elapsedSec": "81.0",
+    "vus": "200",
+    "requests": 756923,
+    "rps": 9456.2,
+    "p50": 190.5,
+    "p90": 306.8,
+    "p95": 392.6,
+    "p99": 17585.4,
+    "max": 17585.4,
+    "avg": 198.1,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 309.6,
+      "rssMb": 420.4,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.2
+    }
+  },
+  {
+    "name": "Group B (Student: /students/data, /mission/todo)",
+    "elapsedSec": "71.0",
+    "vus": "default",
+    "requests": 72993,
+    "rps": 1034.9,
+    "p50": 48.6,
+    "p90": 50,
+    "p95": 57.8,
+    "p99": 346.4,
+    "max": 346.4,
+    "avg": 50.2,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 318.8,
+      "rssMb": 432.8,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.2
+    }
+  },
+  {
+    "name": "Group C (Teacher: /teachers/appear-class)",
+    "elapsedSec": "60.9",
+    "vus": "default",
+    "requests": 27490,
+    "rps": 454.4,
+    "p50": 48.7,
+    "p90": 50.2,
+    "p95": 58,
+    "p99": 568.5,
+    "max": 568.5,
+    "avg": 51.3,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 323.8,
+      "rssMb": 438.3,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.2
+    }
+  },
+  {
+    "name": "Group D (Parent: /parents/parent-data)",
+    "elapsedSec": "60.7",
+    "vus": "default",
+    "requests": 27528,
+    "rps": 456.9,
+    "p50": 48.8,
+    "p90": 52.2,
+    "p95": 60.4,
+    "p99": 364.8,
+    "max": 364.8,
+    "avg": 51.1,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 330,
+      "rssMb": 445.7,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.2
+    }
+  },
+  {
+    "name": "Group E (School Admin: /admin/school-dashboard)",
+    "elapsedSec": "60.8",
+    "vus": "default",
+    "requests": 9334,
+    "rps": 154.5,
+    "p50": 48.7,
+    "p90": 50.1,
+    "p95": 56.9,
+    "p99": 334.5,
+    "max": 334.5,
+    "avg": 50.3,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 309.7,
+      "rssMb": 450.7,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.3
+    }
+  },
+  {
+    "name": "Group F (Super Admin: /admin/analytics/overview)",
+    "elapsedSec": "61.6",
+    "vus": "default",
+    "requests": 3189,
+    "rps": 52,
+    "p50": 191.3,
+    "p90": 199.7,
+    "p95": 209.3,
+    "p99": 619.7,
+    "max": 619.7,
+    "avg": 141.8,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 317.5,
+      "rssMb": 450.7,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.3
+    }
+  },
+  {
+    "name": "Write Idempotency (50 concurrent writes)",
+    "elapsedSec": "0.9",
+    "vus": "default",
+    "requests": 50,
+    "rps": 97.1,
+    "p50": 213.4,
+    "p90": 224.5,
+    "p95": 225.4,
+    "p99": 293.7,
+    "max": 293.7,
+    "avg": 213.7,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 318.2,
+      "rssMb": 450.7,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.3
+    }
+  },
+  {
+    "name": "Mixed Traffic @ 10 VUs",
+    "elapsedSec": "80.8",
+    "vus": "10",
+    "requests": 894,
+    "rps": 11.1,
+    "p50": 194.7,
+    "p90": 209,
+    "p95": 283.5,
+    "p99": 1022.2,
+    "max": 1022.2,
+    "avg": 207.8,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 329.4,
+      "rssMb": 451.3,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.3
+    }
+  },
+  {
+    "name": "Mixed Traffic @ 25 VUs",
+    "elapsedSec": "80.5",
+    "vus": "25",
+    "requests": 2177,
+    "rps": 27.2,
+    "p50": 193.9,
+    "p90": 204.9,
+    "p95": 231.6,
+    "p99": 707.2,
+    "max": 707.2,
+    "avg": 203.6,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 312.6,
+      "rssMb": 452.4,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.3
+    }
+  },
+  {
+    "name": "Mixed Traffic @ 50 VUs",
+    "elapsedSec": "80.9",
+    "vus": "50",
+    "requests": 4296,
+    "rps": 53.4,
+    "p50": 193.5,
+    "p90": 203,
+    "p95": 241,
+    "p99": 784.6,
+    "max": 784.6,
+    "avg": 203.2,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 324.9,
+      "rssMb": 457.4,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.3
+    }
+  },
+  {
+    "name": "Mixed Traffic @ 100 VUs",
+    "elapsedSec": "80.9",
+    "vus": "100",
+    "requests": 8485,
+    "rps": 105.3,
+    "p50": 193.1,
+    "p90": 202.2,
+    "p95": 228.3,
+    "p99": 799.9,
+    "max": 799.9,
+    "avg": 201.9,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 335.4,
+      "rssMb": 457.7,
+      "errorRate": 0.2,
+      "averageLatencyMs": 9.3
+    }
+  },
+  {
+    "name": "Mixed Traffic @ 250 VUs",
+    "elapsedSec": "81.0",
+    "vus": "250",
+    "requests": 18930,
+    "rps": 235,
+    "p50": 193,
+    "p90": 201.1,
+    "p95": 223.3,
+    "p99": 881.8,
+    "max": 881.8,
+    "avg": 200.9,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 336.3,
+      "rssMb": 457.7,
+      "errorRate": 0.28,
+      "averageLatencyMs": 9.3
+    }
+  },
+  {
+    "name": "Mixed Traffic @ 500 VUs",
+    "elapsedSec": "81.2",
+    "vus": "500",
+    "requests": 36053,
+    "rps": 446.8,
+    "p50": 192.6,
+    "p90": 203.3,
+    "p95": 247.8,
+    "p99": 990.5,
+    "max": 990.5,
+    "avg": 202.2,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 6,
+      "threadsRunning": 2,
+      "maxUsed": 30
+    },
+    "system": {
+      "heapUsedMb": 337.1,
+      "rssMb": 457.7,
+      "errorRate": 0.28,
+      "averageLatencyMs": 9.3
+    }
+  }
+]

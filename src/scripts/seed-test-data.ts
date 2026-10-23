@@ -3,8 +3,11 @@ dotenv.config();
 
 import bcrypt from "bcryptjs";
 import { sequelize, rundb } from "../config/db_connection";
+import { assertSafeScriptTarget, requireScriptEnv } from "./scriptSafety";
 
 async function seed() {
+  assertSafeScriptTarget("seed-test-data");
+  const seedPassword = requireScriptEnv("SEED_TEST_DATA_PASSWORD");
   try {
     await sequelize.authenticate();
     const models = {
@@ -74,7 +77,7 @@ async function seed() {
     }
 
     // Hash password
-    const hashedPassword = await bcrypt.hash("123456", 10);
+    const hashedPassword = await bcrypt.hash(seedPassword, 10);
 
     // 4. Teachers
     console.log("Creating Teachers...");
@@ -174,7 +177,7 @@ async function seed() {
       }
     }
 
-    console.log("Seeding complete! Passwords are '123456'");
+    console.log("Seeding complete! Passwords are the value of SEED_TEST_DATA_PASSWORD");
     console.log("Teacher 1: t1@test.com (Classes 1, 2)");
     console.log("Teacher 2: t2@test.com (Classes 3, 4, 5)");
     console.log("Students: s1@test.com through s20@test.com");

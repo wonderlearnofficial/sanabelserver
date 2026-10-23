@@ -11,6 +11,7 @@ import StudentTodoItem, { TodoItemStatus } from "../models/student-todo-item.mod
 import StudentTodoDay from "../models/student-todo-day.model";
 import MissionApprovalRequestEvent, { ApprovalEventType } from "../models/mission-approval-request-event.model";
 import { completeMissionForStudent } from "../helpers/completeMission";
+import { requiresMissionApproval } from "../helpers/studentGameplayMode";
 import { activeTodoKey, ensureTodoDay, findCompletion, isCanonicalDate, utcGameplayDate, withDeadlockRetry } from "../services/studentTodoService";
 import logger from "../config/logger";
 
@@ -32,7 +33,7 @@ const requestApproval = async (req: Request, res: Response) => {
     if (!user) return res.status(401).json({ message: "Unauthorized" });
     const student = await Student.findOne({ where: { userId: user.id } });
     if (!student) return res.status(404).json({ message: "Student not found" });
-    if (!student.classId) return res.status(400).json({ message: "This account does not require mission approval" });
+    if (!requiresMissionApproval(student)) return res.status(400).json({ message: "This account does not require mission approval" });
     const taskId = Number(req.body.taskId);
     const todoItemId = req.body.todoItemId == null ? null : Number(req.body.todoItemId);
     if (!Number.isSafeInteger(taskId) || taskId <= 0) return res.status(400).json({ message: "Invalid taskId parameter" });

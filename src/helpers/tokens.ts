@@ -28,6 +28,11 @@ export interface TokenUser {
   email: string;
   role: string;
   tokenVersion?: number;
+  // Set only by the admin impersonation exchange. An impersonated session is a
+  // real session on the target account, so endpoints that write the account's
+  // own preferences must be able to tell the two apart. Omitted (never `false`)
+  // on ordinary login tokens so their payload is unchanged.
+  imp?: boolean;
 }
 
 export function signAccessToken(user: TokenUser): string {
@@ -39,6 +44,7 @@ export function signAccessToken(user: TokenUser): string {
       // Access tokens must be revocable too. Password resets, password changes,
       // logout, and other security-sensitive account updates rotate this value.
       tokenVersion: user.tokenVersion ?? 0,
+      ...(user.imp === true ? { imp: true } : {}),
     },
     accessSecret(),
     { expiresIn: ACCESS_TTL },
@@ -53,6 +59,9 @@ export function signRefreshToken(user: TokenUser): string {
       role: user.role,
       tokenVersion: user.tokenVersion ?? 0,
       type: "refresh",
+      // Carried so a renewal cannot silently upgrade an impersonated session
+      // into an ordinary one.
+      ...(user.imp === true ? { imp: true } : {}),
     },
     refreshSecret(),
     { expiresIn: REFRESH_TTL },

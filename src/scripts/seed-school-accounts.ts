@@ -5,8 +5,17 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { sequelize, rundb } from "../config/db_connection";
+import { assertSafeScriptTarget, requireScriptEnv } from "./scriptSafety";
 
 async function createSchoolData() {
+  assertSafeScriptTarget("seed-school-accounts");
+  // Account passwords come from the environment only; nothing is hardcoded.
+  const adminPasswordPlain = requireScriptEnv("SEED_SCHOOL_ADMIN_PASSWORD");
+  const teacherPasswordPlain = requireScriptEnv("SEED_SCHOOL_TEACHER_PASSWORD");
+  const parentPasswordPlain = requireScriptEnv("SEED_SCHOOL_PARENT_PASSWORD");
+  const student1PasswordPlain = requireScriptEnv("SEED_SCHOOL_STUDENT_PASSWORD");
+  const student2PasswordPlain = requireScriptEnv("SEED_SCHOOL_STUDENT_PASSWORD");
+  const soloUserPasswordPlain = requireScriptEnv("SEED_SCHOOL_SOLO_PASSWORD");
   try {
     await rundb();
     console.log("Connected to database & models initialized.");
@@ -55,7 +64,6 @@ async function createSchoolData() {
 
     // 3. School Admin Account
     const adminEmail = "admin.school@sanabel.local";
-    const adminPasswordPlain = "Admin#Sanabel2026!";
     const hashedAdminPassword = bcrypt.hashSync(adminPasswordPlain, 10);
 
     let [adminUser] = await User.findOrCreate({
@@ -82,7 +90,6 @@ async function createSchoolData() {
 
     // 4. Teacher Account
     const teacherEmail = "teacher.sarah@sanabel.local";
-    const teacherPasswordPlain = "Teacher#Sanabel2026!";
     const hashedTeacherPassword = bcrypt.hashSync(teacherPasswordPlain, 10);
 
     let [teacherUser] = await User.findOrCreate({
@@ -134,7 +141,6 @@ async function createSchoolData() {
 
     // 6. Parent Account
     const parentEmail = "parent.ahmed@sanabel.local";
-    const parentPasswordPlain = "Parent#Sanabel2026!";
     const hashedParentPassword = bcrypt.hashSync(parentPasswordPlain, 10);
 
     let [parentUser] = await User.findOrCreate({
@@ -178,7 +184,6 @@ async function createSchoolData() {
 
     // 7. Student 1: Omar Ahmed
     const student1Email = "omar.ahmed@sanabel.local";
-    const student1PasswordPlain = "Student#Sanabel2026!";
     const hashedStudent1Password = bcrypt.hashSync(student1PasswordPlain, 10);
 
     let [student1User] = await User.findOrCreate({
@@ -233,7 +238,6 @@ async function createSchoolData() {
 
     // 8. Student 2: Layla Ahmed
     const student2Email = "layla.ahmed@sanabel.local";
-    const student2PasswordPlain = "Student#Sanabel2026!";
     const hashedStudent2Password = bcrypt.hashSync(student2PasswordPlain, 10);
 
     let [student2User] = await User.findOrCreate({
@@ -288,7 +292,6 @@ async function createSchoolData() {
 
     // 9. Solo User (independent Student with no organization, class, or parent)
     const soloUserEmail = "solo.user@sanabel.local";
-    const soloUserPasswordPlain = "Solo#Sanabel2026!";
     const hashedSoloUserPassword = bcrypt.hashSync(soloUserPasswordPlain, 10);
 
     let [soloUser] = await User.findOrCreate({
@@ -365,7 +368,7 @@ async function createSchoolData() {
    - Role          : Admin
    - Name          : ${adminUser.firstName} ${adminUser.lastName}
    - Email         : ${adminEmail}
-   - Password      : ${adminPasswordPlain}
+   - Password      : (value of SEED_SCHOOL_ADMIN_PASSWORD)
    - Organization  : ${school.name} (Org ID: ${school.id})
    - Description   : Manages all students, teachers, parents, and classes for this school.
 
@@ -375,7 +378,7 @@ async function createSchoolData() {
    - Role          : Teacher
    - Name          : ${teacherUser.firstName} ${teacherUser.lastName}
    - Email         : ${teacherEmail}
-   - Password      : ${teacherPasswordPlain}
+   - Password      : (value of SEED_SCHOOL_TEACHER_PASSWORD)
    - Teacher ID    : ${teacherRecord.id}
    - Assigned Class: ${cls.classname} (ID: ${cls.id})
    - Organization  : ${school.name} (Org ID: ${school.id})
@@ -387,7 +390,7 @@ async function createSchoolData() {
    - Role          : Parent
    - Name          : ${parentUser.firstName} ${parentUser.lastName}
    - Email         : ${parentEmail}
-   - Password      : ${parentPasswordPlain}
+   - Password      : (value of SEED_SCHOOL_PARENT_PASSWORD)
    - Parent ID     : ${parentRecord.id}
    - Children      : Omar Ahmed & Layla Ahmed
    - Description   : Linked directly to both students to approve missions and monitor their progress.
@@ -398,7 +401,7 @@ async function createSchoolData() {
    - Role          : Student (School Student)
    - Name          : ${student1User.firstName} ${student1User.lastName}
    - Email         : ${student1Email}
-   - Password      : ${student1PasswordPlain}
+   - Password      : (value of SEED_SCHOOL_STUDENT_PASSWORD)
    - Student ID    : ${student1Record.id}
    - Connect Code  : ${student1Record.connectCode}
    - School Org ID : ${school.id}
@@ -411,7 +414,7 @@ async function createSchoolData() {
    - Role          : Student (School Student)
    - Name          : ${student2User.firstName} ${student2User.lastName}
    - Email         : ${student2Email}
-   - Password      : ${student2PasswordPlain}
+   - Password      : (value of SEED_SCHOOL_STUDENT_PASSWORD)
    - Student ID    : ${student2Record.id}
    - Connect Code  : ${student2Record.connectCode}
    - School Org ID : ${school.id}
@@ -424,7 +427,7 @@ async function createSchoolData() {
    - Role          : Student (Solo User)
    - Name          : ${soloUser.firstName} ${soloUser.lastName}
    - Email         : ${soloUserEmail}
-   - Password      : ${soloUserPasswordPlain}
+   - Password      : (value of SEED_SCHOOL_SOLO_PASSWORD)
    - User ID       : ${soloUser.id}
    - Student ID    : ${soloStudentRecord.id}
    - Connect Code  : ${soloStudentRecord.connectCode}

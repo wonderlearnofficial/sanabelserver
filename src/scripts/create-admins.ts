@@ -5,16 +5,32 @@ import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { sequelize } from "../config/db_connection";
+import { assertSafeScriptTarget, requireScriptEnv } from "./scriptSafety";
 import User from "../models/user.model";
 import Organization from "../models/oraganization.model";
+import Admin from "../models/admin.model";
 
 async function setupAdmins() {
+  // Deletes every Admin user before recreating them: local databases only.
+  assertSafeScriptTarget("create-admins");
+  // Read before anything is deleted, so a missing variable aborts cleanly.
+  const superAdminPassword = requireScriptEnv("SUPERADMIN_PASSWORD");
+  const nawahAdminPassword = requireScriptEnv("NAWAH_ADMIN_PASSWORD");
+  const aliPassword = requireScriptEnv("ALI_ADMIN_PASSWORD");
   try {
     await sequelize.authenticate();
     console.log("Connected to database.");
 
     User.initModel(sequelize);
     Organization.initModel(sequelize);
+    Admin.initModel(sequelize);
+
+    // Admins is the authoritative scope (AGENTS.md). Without this row checkAdmin
+    // falls back to Users.organizationId, which is only a legacy fallback.
+    const ensureAdminProfile = async (userId: number, organizationId: number | null) => {
+      const [profile] = await Admin.findOrCreate({ where: { userId }, defaults: { userId, organizationId } });
+      if (profile.organizationId !== organizationId) await profile.update({ organizationId });
+    };
 
     // 1. Delete old admin users (except if alielmayyah is an admin, we handle him explicitly)
     console.log("Cleaning up old admin users...");
@@ -34,7 +50,6 @@ async function setupAdmins() {
 
     // 3. Create Super Admin (organizationId: null -> sees all schools)
     const superAdminEmail = process.env.SUPERADMIN_EMAIL || "superadmin@sanabelalehsan.com";
-    const superAdminPassword = process.env.SUPERADMIN_PASSWORD || "SuperAdmin#Sanabel2026!";
     const hashedSuperPassword = bcrypt.hashSync(superAdminPassword, 10);
 
     const superAdmin = await User.create({
@@ -47,11 +62,11 @@ async function setupAdmins() {
       isAccess: true,
       otpVerified: true,
     });
+    await ensureAdminProfile(superAdmin.id, null);
     console.log(`Created Super Admin: ${superAdmin.email} (ID: ${superAdmin.id}, organizationId: null)`);
 
     // 4. Create Nawah School Admin (organizationId: nawahOrg.id -> scoped to Nawah)
     const nawahAdminEmail = process.env.NAWAH_ADMIN_EMAIL || "admin.nawah@sanabelalehsan.com";
-    const nawahAdminPassword = process.env.NAWAH_ADMIN_PASSWORD || "Sanabel2026Admin!";
     const hashedNawahPassword = bcrypt.hashSync(nawahAdminPassword, 10);
 
     const nawahAdmin = await User.create({
@@ -64,11 +79,11 @@ async function setupAdmins() {
       isAccess: true,
       otpVerified: true,
     });
+    await ensureAdminProfile(nawahAdmin.id, nawahOrg.id);
     console.log(`Created Nawah School Admin: ${nawahAdmin.email} (ID: ${nawahAdmin.id}, organizationId: ${nawahOrg.id})`);
 
     // 5. Update/Create user alielmayyah@gmail.com
     const aliEmail = "alielmayyah@gmail.com";
-    const aliPassword = "Ali#Sanabel2026!";
     const hashedAliPassword = bcrypt.hashSync(aliPassword, 10);
 
     let aliUser = await User.findOne({ where: { email: aliEmail } });
@@ -91,6 +106,7 @@ async function setupAdmins() {
       });
       console.log(`Created user: ${aliEmail} (ID: ${aliUser.id}, Role: ${aliUser.role})`);
     }
+    if (aliUser.role === "Admin") await ensureAdminProfile(aliUser.id, aliUser.organizationId ?? null);
 
     // 6. Write sanabel admin.txt in the root workspace
     const rootPath = path.resolve(__dirname, "../../../");
@@ -103,7 +119,7 @@ async function setupAdmins() {
 1. SUPER ADMIN (Full Global Access)
    - Description : Sees and manages all schools, users, grades, and metrics.
    - Email       : ${superAdminEmail}
-   - Password    : ${superAdminPassword}
+   - Password    : (value of SUPERADMIN_PASSWORD)
    - Scope       : Global (organizationId: null)
 
 -----------------------------------------------------
@@ -111,7 +127,7 @@ async function setupAdmins() {
 2. SCHOOL ADMIN (Nawah School Scoped)
    - Description : Scoped strictly to Nawah school.
    - Email       : ${nawahAdminEmail}
-   - Password    : ${nawahAdminPassword}
+   - Password    : (value of NAWAH_ADMIN_PASSWORD)
    - Scope       : Nawah (Org ID: ${nawahOrg.id})
 
 -----------------------------------------------------
@@ -119,7 +135,7 @@ async function setupAdmins() {
 3. PERSONAL / DEVELOPER ACCOUNT
    - Description : ${aliUser.role} Account (${aliUser.firstName} ${aliUser.lastName || ""})
    - Email       : ${aliEmail}
-   - Password    : ${aliPassword}
+   - Password    : (value of ALI_ADMIN_PASSWORD)
    - Role        : ${aliUser.role}
    - Scope       : ${aliUser.organizationId ? `Org ID: ${aliUser.organizationId}` : "Global / Superadmin"}
 

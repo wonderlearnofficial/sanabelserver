@@ -63,6 +63,7 @@ export const router = express.Router();
  *       500:
  *         description: Internal server error
  */
+router.post("/login", userController.login);
 router.patch("/login", userController.login);
 /**
  * @swagger
@@ -415,3 +416,5 @@ router.post("/subscribe-push", authenticateToken, userController.subscribePushNo
  *       - BearerAuth: []
  */
 router.post("/unsubscribe-push", authenticateToken, userController.unsubscribePushNotification);
+router.post("/impersonation/exchange", userController.exchangeImpersonationHandoff);
+router.post("/impersonate/exchange", userController.exchangeImpersonationHandoff);

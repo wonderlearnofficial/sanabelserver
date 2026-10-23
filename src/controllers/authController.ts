@@ -42,6 +42,14 @@ const sendOtp = async (req: Request, res: Response) => {
           .json({ status: 400, message: "Email already in use" });
       }
     }
+    // Only a pending signup (no password yet) may take the OTP path. An
+    // account an admin disabled (isAccess false) still has a password and
+    // must never be re-enabled by proving control of the email.
+    if (existingUser && existingUser.password != null) {
+      return res
+        .status(400)
+        .json({ status: 400, message: "Email already in use" });
+    }
     const otp = generateOTP();
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
@@ -54,6 +62,8 @@ const sendOtp = async (req: Request, res: Response) => {
 
       await sendEmail({
         to: email,
+        userId: existingUser.id,
+        purpose: "OTP",
         subject: "Your OTP Code – Sanabel Al-Ihsan",
         text: `Your OTP code is ${otp}. It is valid for 5 minutes.`,
         html: buildOtpEmail(otp),
@@ -75,6 +85,8 @@ const sendOtp = async (req: Request, res: Response) => {
 
     await sendEmail({
       to: email,
+      userId: otpUser.id,
+      purpose: "OTP",
       subject: "Your OTP Code – Sanabel Al-Ihsan",
       text: `Your OTP code is ${otp}. It is valid for 5 minutes.`,
       html: buildOtpEmail(otp),
@@ -132,6 +144,15 @@ const verifyOTP = async (req: Request, res: Response) => {
     const user = await User.findOne({ where: { email } });
     if (!user) {
       return res.status(404).json({ status: 404, message: "User not found" });
+    }
+
+    // Signup verification only: an account that already has a password
+    // (including one an admin disabled) is never enabled through this path.
+    if (user.password != null) {
+      return res.status(400).json({
+        status: 400,
+        message: "This email already belongs to an account. Sign in instead.",
+      });
     }
 
     // Reject while the account is temporarily locked from repeated wrong codes

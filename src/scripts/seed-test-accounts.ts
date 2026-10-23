@@ -1,27 +1,17 @@
 import dotenv from "dotenv";
 dotenv.config();
 
-// Auto-switch to Railway public proxy if targeting railway or if running on developer machine with .railway.internal
-if (
-  process.argv.includes("--railway") ||
-  process.env.npm_lifecycle_event === "seed:test-railway" ||
-  process.env.MYSQL_DB_HOST?.endsWith(".railway.internal")
-) {
-  process.env.MYSQL_DB_HOST = "hayabusa.proxy.rlwy.net";
-  process.env.MYSQL_DB_PORT = "28191";
-  process.env.MYSQL_DB_USER = "root";
-  process.env.MYSQL_DB_PASS = "nZcvRbJXtgxcbXZNTHRPjLmKIhcmtYzh";
-  process.env.MYSQL_DB_NAME = "railway";
-  process.env.NODE_ENV = "production";
-  process.env.DB_SYNC_ON_STARTUP = "false";
-}
+// Connection details come from the environment only (MYSQL_DB_*). There is
+// deliberately no built-in remote target: run against a remote database only
+// by exporting its variables yourself and passing --allow-remote.
 
 import fs from "fs";
 import path from "path";
 import bcrypt from "bcryptjs";
 import { sequelize, rundb } from "../config/db_connection";
+import { assertSafeScriptTarget, requireScriptEnv } from "./scriptSafety";
 
-const SHARED_PASSWORD = "Test#Sanabel2026!";
+const SHARED_PASSWORD_ENV = "TEST_ACCOUNT_PASSWORD";
 const SCHOOL_NAME = "Sanabel Test School";
 const GRADE_NAME = "Test Grade 5";
 const CLASS_NAME = "Test Class 5A";
@@ -65,6 +55,8 @@ async function ensureUser(
 }
 
 async function seedTestAccounts() {
+  assertSafeScriptTarget("seed-test-accounts");
+  const SHARED_PASSWORD = requireScriptEnv(SHARED_PASSWORD_ENV);
   try {
     await rundb();
     console.log("Connected to database & models initialized.");
@@ -265,7 +257,7 @@ async function seedTestAccounts() {
        Generated: ${new Date().toISOString()}
 ===================================================
 
-Shared Password: ${SHARED_PASSWORD}
+Shared Password: (value of ${SHARED_PASSWORD_ENV})
 
 SCHOOL STRUCTURE
 ---------------------------------------------------
@@ -277,7 +269,7 @@ SCHOOL STRUCTURE
 SCHOOL ADMIN (scoped to ${school.name})
 ---------------------------------------------------
   Email    : ${adminEmail}
-  Password : ${SHARED_PASSWORD}
+  Password : (value of ${SHARED_PASSWORD_ENV})
   User ID  : ${adminUser.id}
   Admins ID: ${adminProfile.id}
 
@@ -285,7 +277,7 @@ SCHOOL ADMIN (scoped to ${school.name})
 TEACHER (assigned to ${cls.classname})
 ---------------------------------------------------
   Email      : ${teacherEmail}
-  Password   : ${SHARED_PASSWORD}
+  Password   : (value of ${SHARED_PASSWORD_ENV})
   User ID    : ${teacherUser.id}
   Teacher ID : ${teacherRecord.id}
 

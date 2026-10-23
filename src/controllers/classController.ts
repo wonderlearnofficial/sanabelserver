@@ -5,6 +5,8 @@ import Grade from "../models/grade.model";
 import logger from "../config/logger";
 import { getImportField } from "../helpers/importFieldLookup";
 import { resolveOrgClassGrade } from "../helpers/resolveOrgClassGrade";
+import { recordImportRun } from "../helpers/importRunRecorder";
+import { ImportFailure, describeRowError, importRowNumber, rowFailure } from "../helpers/importRow";
 
 // Row-based bulk import (one row per class), distinct from the legacy
 // second-row-header + "/"/"&"-split createClassByExcel below — kept for
@@ -14,12 +16,15 @@ import { resolveOrgClassGrade } from "../helpers/resolveOrgClassGrade";
 const importClasses = async (req: Request, res: Response) => {
   const processedData: any = req.processedData;
   const successfulEntries: any[] = [];
-  const failedEntries: any[] = [];
+  const failedEntries: ImportFailure[] = [];
+  const targetOrganizationIds = new Set<number>();
 
   try {
     for (const sheet in processedData) {
-      const all_data = processedData[sheet];
-      for (const data of all_data) {
+      const all_data: any[] = Array.isArray(processedData[sheet]) ? processedData[sheet] : [];
+      for (let rowIndex = 0; rowIndex < all_data.length; rowIndex += 1) {
+        const data = all_data[rowIndex];
+        const rowNumber = importRowNumber(data, rowIndex);
         try {
           const classInput = getImportField(data, "classname", "className", "class", "Class");
           const orgInput = getImportField(data, "school", "School", "OrganizationName", "organizationName");
@@ -33,28 +38,39 @@ const importClasses = async (req: Request, res: Response) => {
               (req as Request & { adminOrganizationId?: number | null })
                 .adminOrganizationId ?? null,
           });
-          if ("error" in result) {
-            failedEntries.push({ row: data, error: result.error });
+          if ("error" in result && result.error) {
+            failedEntries.push(rowFailure(rowNumber, result.code, result.error, result.column));
             continue;
           }
+          targetOrganizationIds.add(result.organization!.id);
 
           successfulEntries.push({
-            row: data,
+            rowNumber,
             message: "Class resolved successfully",
-            classId: result.classRecord.id,
-            organizationId: result.organization.id,
+            classId: result.classRecord!.id,
+            organizationId: result.organization!.id,
           });
         } catch (error) {
-          failedEntries.push({
-            row: data,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          failedEntries.push(describeRowError(rowNumber, error));
+          logger.error("Class import row failed", { error, rowNumber });
         }
       }
     }
 
+    // Import telemetry. Recorded after the rows are written and deliberately
+    // non-fatal: see `helpers/importRunRecorder` for why one row is one
+    // submitted batch rather than one uploaded file.
+    await recordImportRun(req, {
+      entityType: "classes",
+      succeeded: successfulEntries.length,
+      failed: failedEntries.length,
+      targetOrganizationId:
+        targetOrganizationIds.size === 1 ? [...targetOrganizationIds][0] : null,
+    });
+
     res.json({
       message: "Class import completed",
+      total: successfulEntries.length + failedEntries.length,
       successCount: successfulEntries.length,
       failureCount: failedEntries.length,
       successfulEntries,
@@ -62,7 +78,7 @@ const importClasses = async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error("Error processing Excel file (class import):", { error });
-    res.status(500).json({ message: "Internal server error", error });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 
@@ -112,10 +128,13 @@ const createClassByExcel = async (req: Request, res: Response) => {
 
 
           const gradeName = String(grade).trim().toLowerCase();
-          const [gradeRecord] = await Grade.findOrCreate({
-            where: { name: gradeName },
-            defaults: { name: gradeName }
-          });
+          // Scoped to this school: its own grade, else a shared (global)
+          // grade, else a new grade owned by this school. Never another
+          // school's grade of the same name.
+          const gradeRecord =
+            (await Grade.findOne({ where: { name: gradeName, organizationId: organization.id } })) ??
+            (await Grade.findOne({ where: { name: gradeName, organizationId: null } })) ??
+            (await Grade.create({ name: gradeName, organizationId: organization.id }));
 
           // Normalize classNames to array if it's a string
           if (!Array.isArray(classNames)) {

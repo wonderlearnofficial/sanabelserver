@@ -1,0 +1,152 @@
+[
+  {
+    "name": "Optimized Mixed Traffic @ 500 VUs",
+    "elapsedSec": "41.5",
+    "vus": "500",
+    "requests": 18867,
+    "rps": 460.9,
+    "p50": 192.5,
+    "p90": 210.7,
+    "p95": 263.3,
+    "p99": 1946.7,
+    "max": 1946.7,
+    "avg": 205.3,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 11,
+      "threadsRunning": 2,
+      "maxUsed": 80
+    },
+    "system": {
+      "heapUsedMb": 177.9,
+      "rssMb": 715.6,
+      "errorRate": 82.95,
+      "averageLatencyMs": 249.3
+    }
+  },
+  {
+    "name": "Optimized Mixed Traffic @ 1000 VUs",
+    "elapsedSec": "41.4",
+    "vus": "1000",
+    "requests": 37755,
+    "rps": 927.2,
+    "p50": 192.2,
+    "p90": 220.5,
+    "p95": 256.4,
+    "p99": 1102.7,
+    "max": 1102.7,
+    "avg": 203.5,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 11,
+      "threadsRunning": 2,
+      "maxUsed": 80
+    },
+    "system": {
+      "heapUsedMb": 62.8,
+      "rssMb": 192.3,
+      "errorRate": 82.94,
+      "averageLatencyMs": 249.3
+    }
+  },
+  {
+    "name": "Optimized Mixed Traffic @ 2000 VUs",
+    "elapsedSec": "62.1",
+    "vus": "2000",
+    "requests": 108966,
+    "rps": 1788.5,
+    "p50": 193.6,
+    "p90": 232.3,
+    "p95": 294.6,
+    "p99": 1154.9,
+    "max": 1154.9,
+    "avg": 208.8,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 11,
+      "threadsRunning": 2,
+      "maxUsed": 80
+    },
+    "system": {
+      "heapUsedMb": 62.8,
+      "rssMb": 193.2,
+      "errorRate": 82.94,
+      "averageLatencyMs": 249.3
+    }
+  },
+  {
+    "name": "Optimized Mixed Traffic @ 3000 VUs",
+    "elapsedSec": "62.6",
+    "vus": "3000",
+    "requests": 150739,
+    "rps": 2469.9,
+    "p50": 215.3,
+    "p90": 283.3,
+    "p95": 326.4,
+    "p99": 3210.6,
+    "max": 3210.6,
+    "avg": 236.3,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 11,
+      "threadsRunning": 2,
+      "maxUsed": 80
+    },
+    "system": {
+      "heapUsedMb": 60.6,
+      "rssMb": 162.2,
+      "errorRate": 82.94,
+      "averageLatencyMs": 249.3
+    }
+  },
+  {
+    "name": "Optimized Mixed Traffic @ 4000 VUs",
+    "elapsedSec": "68.1",
+    "vus": "4000",
+    "requests": 184790,
+    "rps": 2794.7,
+    "p50": 229.3,
+    "p90": 321,
+    "p95": 364.8,
+    "p99": 30471.3,
+    "max": 30471.3,
+    "avg": 399.4,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 11,
+      "threadsRunning": 2,
+      "maxUsed": 80
+    },
+    "system": {
+      "heapUsedMb": 60.7,
+      "rssMb": 163.3,
+      "errorRate": 82.94,
+      "averageLatencyMs": 249.3
+    }
+  },
+  {
+    "name": "Optimized Mixed Traffic @ 5000 VUs",
+    "elapsedSec": "102.4",
+    "vus": "5000",
+    "requests": 326124,
+    "rps": 3259.8,
+    "p50": 284.9,
+    "p90": 428.9,
+    "p95": 529.3,
+    "p99": 53863.6,
+    "max": 53863.6,
+    "avg": 566.4,
+    "errorRate": 0,
+    "mysql": {
+      "threadsConnected": 11,
+      "threadsRunning": 2,
+      "maxUsed": 80
+    },
+    "system": {
+      "heapUsedMb": 60.7,
+      "rssMb": 163.7,
+      "errorRate": 82.94,
+      "averageLatencyMs": 249.3
+    }
+  }
+]

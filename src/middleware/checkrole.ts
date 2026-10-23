@@ -93,27 +93,45 @@ const checkAdmin = async (
   // yet — e.g. an account created between the backfill and a later deploy.
   // Scope is never taken from the request body, query or client storage.
   if (user.role === "Admin") {
-    const [adminProfile, userRecord] = await Promise.all([
-      Admin.findOne({ where: { userId: user.id }, attributes: ["id", "organizationId"] }),
-      User.findByPk(user.id, { attributes: ["id", "organizationId"] }),
-    ]);
-    if (!userRecord) {
-      logger.warn("Admin token for a user that no longer exists", { userId: user.id });
-      return res.status(401).json({ message: "User data not found in request" });
-    }
-    if (!adminProfile) {
-      logger.warn("Admin has no Admins profile row; falling back to legacy user scope", {
-        userId: user.id,
-      });
-    }
+    const adminProfile = await Admin.findOne({
+      where: { userId: user.id },
+      attributes: ["id", "organizationId"],
+    });
+
     const request = req as Request & {
       adminOrganizationId?: number | null;
       admin?: Admin | null;
+      userAccount?: any;
     };
     request.admin = adminProfile;
-    request.adminOrganizationId = adminProfile
-      ? adminProfile.organizationId ?? null
-      : userRecord.organizationId ?? null;
+
+    if (adminProfile) {
+      request.adminOrganizationId = adminProfile.organizationId ?? null;
+    } else {
+      logger.warn("Admin has no Admins profile row; falling back to legacy user scope", {
+        userId: user.id,
+      });
+      const userRecord =
+        request.userAccount ||
+        (await User.findByPk(user.id, { attributes: ["id", "organizationId"] }));
+      if (!userRecord) {
+        logger.warn("Admin token for a user that no longer exists", { userId: user.id });
+        return res.status(401).json({ message: "User data not found in request" });
+      }
+      // Fail closed: the legacy fallback may only narrow scope to a school.
+      // A missing Admins row plus a null Users.organizationId must never be
+      // read as Super Admin; real Super Admins have an explicit Admins row.
+      if (userRecord.organizationId == null) {
+        logger.warn("Admin refused: no Admins profile row and no legacy organization", {
+          userId: user.id,
+        });
+        return res.status(403).json({
+          status: 403,
+          message: "Admin profile is missing for this account. Ask a Super Admin to restore it.",
+        });
+      }
+      request.adminOrganizationId = userRecord.organizationId;
+    }
   }
 
   if (user.role == "Admin") {
@@ -165,8 +183,17 @@ const requireSuperAdmin = async (
       scope = adminProfile.organizationId ?? null;
       request.admin = adminProfile;
     } else {
+      // Same fail-closed rule as checkAdmin: without an Admins row, only a
+      // legacy school scope is honoured; never a fallback to global scope.
       const userRecord = await User.findByPk(user.id, { attributes: ["id", "organizationId"] });
-      scope = userRecord?.organizationId ?? null;
+      if (userRecord?.organizationId == null) {
+        logger.warn("Super-admin route refused: no Admins profile row", { userId: user.id });
+        return res.status(403).json({
+          status: 403,
+          message: "Admin profile is missing for this account. Ask a Super Admin to restore it.",
+        });
+      }
+      scope = userRecord.organizationId;
     }
     request.adminOrganizationId = scope;
   }

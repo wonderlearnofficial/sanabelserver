@@ -18,6 +18,10 @@ interface ResolveResult {
 
 interface ResolveError {
   error: string;
+  /** Stable machine code, e.g. GRADE_REQUIRED. */
+  code: string;
+  /** Template column at fault: school, grade or classname. */
+  column: "school" | "grade" | "classname";
   organization?: undefined;
   classRecord?: undefined;
   gradeRecord?: undefined;
@@ -34,25 +38,25 @@ export async function resolveOrgClassGrade({
 }: ResolveParams): Promise<ResolveResult | ResolveError> {
   const orgName = String(orgInput || "").trim().toLowerCase();
   if (!orgName && adminOrganizationId === null) {
-    return { error: "Missing school/organization name" };
+    return { error: "school is required", code: "ORGANIZATION_REQUIRED", column: "school" };
   }
   const organization = adminOrganizationId !== null
     ? await Organization.findByPk(adminOrganizationId)
     : await Organization.findOne({ where: { name: orgName } });
   if (!organization) {
-    return { error: "Organization does not exist" };
+    return { error: "school not found; create it before importing", code: "ORGANIZATION_NOT_FOUND", column: "school" };
   }
   if (
     adminOrganizationId !== null &&
     orgName &&
     organization.name.trim().toLowerCase() !== orgName
   ) {
-    return { error: "School admins cannot import classes into another organization" };
+    return { error: "school admins can import only into their own school", code: "FORBIDDEN_ORGANIZATION", column: "school" };
   }
 
   const gradeName = String(gradeInput || "").trim().toLowerCase();
   if (!gradeName) {
-    return { error: "Missing grade name" };
+    return { error: "grade is required", code: "GRADE_REQUIRED", column: "grade" };
   }
   let gradeRecord = await Grade.findOne({
     where: { name: gradeName, organizationId: organization.id },
@@ -63,12 +67,12 @@ export async function resolveOrgClassGrade({
     });
   }
   if (!gradeRecord) {
-    return { error: "Grade does not exist in this organization" };
+    return { error: "grade not found in this organization", code: "GRADE_NOT_FOUND", column: "grade" };
   }
 
   const className = String(classInput || "").trim();
   if (!className) {
-    return { error: "Missing class name" };
+    return { error: "classname is required", code: "REQUIRED_FIELD_MISSING", column: "classname" };
   }
   let classRecord = await Class.findOne({
     where: { organizationId: organization.id, classname: className },
@@ -81,7 +85,7 @@ export async function resolveOrgClassGrade({
       grade: gradeRecord ? gradeRecord.name : gradeName || null,
     });
   } else if (classRecord.gradeId !== gradeRecord.id) {
-    return { error: "Existing class belongs to a different grade" };
+    return { error: "classname already exists under a different grade", code: "CLASS_GRADE_MISMATCH", column: "grade" };
   }
 
   return { organization, classRecord, gradeRecord };

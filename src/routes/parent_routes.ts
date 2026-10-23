@@ -23,10 +23,23 @@ import {
   denyRequestAsParent,
 } from "../controllers/missionController";
 import { assignTodoAsParent } from "../controllers/todoController";
+import rateLimit, { ipKeyGenerator } from "express-rate-limit";
 import upload from "../middleware/uploadExcel";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
 
 export const router = require("express").Router();
+
+// Connect codes are 5 digits, so the search endpoint is enumerable. Throttle it
+// per authenticated user (falling back to client IP) after authenticateToken.
+export const connectCodeSearchLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  limit: Number(process.env.CONNECT_CODE_SEARCH_RATE_LIMIT) || 30,
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req: any) =>
+    req.user?.id != null ? `user:${req.user.id}` : `ip:${ipKeyGenerator(req.ip || "")}`,
+  message: { success: false, message: "Too many student code searches, try again later." },
+});
 
 /**
  * @swagger
@@ -293,6 +306,7 @@ router.get(
 router.get(
   "/search-student-by-code/:code",
   authenticateToken,
+  connectCodeSearchLimiter,
   checkparent,
   searchStuentByCode
 );

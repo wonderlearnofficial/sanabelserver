@@ -4,8 +4,8 @@ import logger from "../config/logger";
 import { JwtPayload } from "jsonwebtoken";
 
 import User from "../models/user.model";
-import { Op, fn, col, literal } from "sequelize";
-import { Sequelize, QueryTypes, where } from "sequelize";
+// v7 helpers to match the @sequelize/core v7 models (a v6 where()/fn() is rejected by them).
+import { Op, fn, col, literal, Sequelize, QueryTypes, where } from "@sequelize/core";
 
 import TaskCategory from "../models/task-category.model";
 import Parent from "../models/parent.model";
@@ -21,9 +21,22 @@ import bcrypt from "bcryptjs";
 import { sendEmail } from "../helpers/sendEmail";
 import { buildAccountCreatedEmail, getEmailAttachments, getAppUrl } from "../helpers/emailTemplates";
 import { getImportField } from "../helpers/importFieldLookup";
-import { generateSixDigitPassword } from "../helpers/generatePassword";
+import {
+  ImportFailure,
+  describeRowError,
+  importRowNumber,
+  isValidImportEmail,
+  normalizeImportEmail,
+  parseImportDate,
+  rowFailure,
+  runWithConcurrency,
+} from "../helpers/importRow";
+import { hashPasswordOffThread } from "../helpers/passwordHashPool";
+import { generateSixDigitPassword, generateImportPassword } from "../helpers/generatePassword";
 import { buildCategoryCounts } from "../helpers/taskCategoryStats";
 import { processDirectCompletionBatch } from "../services/directCompletionService";
+import { recordImportRun } from "../helpers/importRunRecorder";
+import { PROFILE_USER_ATTRIBUTES, accountCreatedAtIso } from "../helpers/accountIdentity";
 
 const parentData = async (req: Request, res: Response) => {
   const user = (req as Request & { user: JwtPayload | undefined }).user;
@@ -35,19 +48,30 @@ const parentData = async (req: Request, res: Response) => {
   try {
     const parent = await Parent.findOne({
       where: { userId: user.id },
-      include: [{
-        model: User,
-        as: "user", // use the alias defined in the association
-      },
-      
-    ]
-     
+      include: [
+        {
+          model: User,
+          as: "user", // use the alias defined in the association
+          // Explicit allowlist. Including the whole User row returned the
+          // password hash, the OTP fields, tokenVersion, the push subscription
+          // and the stored location to the client. The allowlist is exactly
+          // what `StudentUserProvider` reads for a Parent, plus createdAt for
+          // the account-age field below.
+          attributes: [...PROFILE_USER_ATTRIBUTES],
+        },
+      ],
     });
     if (!parent) {
       return res.status(404).json({ message: "User or Student not found" });
     } else {
-
-      res.status(200).json({ data: parent });
+      // Same field, same format, same provenance as the Student and Teacher
+      // profiles: `Users.createdAt`, ISO, or null.
+      res.status(200).json({
+        data: {
+          ...parent.toJSON(),
+          accountCreatedAt: accountCreatedAtIso((parent as any).user?.createdAt),
+        },
+      });
     }
   } catch (error) {
     logger.error("Error fetching parent data:", { error });
@@ -132,18 +156,22 @@ const searchStuentByCode = async (req: Request, res: Response) => {
         if (!code) {
             return res.status(400).json({ message: "Student connection code is required" });
         }
+        // Display fields only: ParentInvite.tsx renders name/avatar, the code,
+        // level (from xp), water, seeders and tree stage. No DOB, Snabel
+        // balances, ParentId, classId or organizationId.
         const student = await Student.findOne({
             where: {connectCode: code },
+            attributes: ["id", "connectCode", "xp", "water", "seeders", "treeProgress"],
             include:[{
                 model:User,
                 as:"user",
-                attributes: ["firstName", "lastName","profileImg","gender","dateOfBirth"]
+                attributes: ["firstName", "lastName","profileImg","gender"]
             }]
         }
-        
+
     );
         if (!student) {
-            return res.status(404).json({ message: "Student not found" });
+            return res.status(404).json({ message: "Not found" });
         }
         return res.status(200).json({ data: student });
     } catch (error) {
@@ -489,8 +517,10 @@ const legacyAddPros = async (req: Request, res: Response) => {
         
         const studentId = Number(req.params.studentId);
         if (!studentId) return res.status(400).json({ message: "Student ID is required" });
+        // Only a child linked to this parent. An unlinked id answers 404 so a
+        // parent cannot enumerate other students' profiles by sequential id.
         const student = await Student.findOne({
-          where: { id: studentId},
+          where: { id: studentId, ParentId: parent.id },
         
           include: [{
             model: User,
@@ -626,16 +656,20 @@ const legacyAddPros = async (req: Request, res: Response) => {
         const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
         const offset = Math.max(Number(req.query.offset) || 0, 0);
 
+        // Display fields only. connectCode is the sole secret needed to link
+        // a child, and these Solo Users have no parent yet, so it (and email)
+        // must never appear in a list every parent can read.
         const students = await Student.findAll({
           where: {
             organizationId: null, 
           },
+          attributes: ["id", "userId", "xp"],
           include: [
             {
               model: User,
               as: "user",
               where: userFilters,
-              attributes: ["firstName", "lastName", "email", "profileImg", "gender"],
+              attributes: ["firstName", "lastName", "profileImg", "gender"],
             },
           ],
           order: [["xp", "DESC"]],
@@ -658,35 +692,129 @@ const legacyAddPros = async (req: Request, res: Response) => {
 const addParent = async (req: Request, res: Response) => {
   const processedData: any = req.processedData;
   const successfulEntries: any[] = [];
-  const failedEntries: any[] = [];
+  const failedEntries: ImportFailure[] = [];
+  const adminScope = (
+    req as Request & { adminOrganizationId?: number | null }
+  ).adminOrganizationId ?? null;
+  const fail = (rowNumber: number, email: string, code: string, message: string, column?: string) =>
+    failedEntries.push(rowFailure(rowNumber, code, message, column, email));
+
+  const orgCache = new Map<string, Promise<Organization | null>>();
+  const findOrganization = (key: string, load: () => Promise<Organization | null>) => {
+    if (!orgCache.has(key)) orgCache.set(key, load());
+    return orgCache.get(key)!;
+  };
+  const firstRowOfEmail = new Map<string, number>();
+  const targetOrganizationIds = new Set<number>();
+  const pendingEmails: Array<{ entry: any; firstName: string; email: string; password: string; userId: number }> = [];
 
   try {
+    const adminOrganization = adminScope !== null
+      ? await findOrganization(`id:${adminScope}`, () => Organization.findByPk(adminScope))
+      : null;
+    if (adminScope !== null && !adminOrganization) {
+      return res.status(403).json({
+        code: "ADMIN_SCOPE_INVALID",
+        message: "The administrator's organization no longer exists",
+      });
+    }
+
     for (const sheet in processedData) {
-      const all_data = processedData[sheet];
-      for (const data of all_data) {
+      const all_data: any[] = Array.isArray(processedData[sheet]) ? processedData[sheet] : [];
+      for (let rowIndex = 0; rowIndex < all_data.length; rowIndex += 1) {
+        const data = all_data[rowIndex];
+        const rowNumber = importRowNumber(data, rowIndex);
+        let email = "";
         try {
-          const firstName = getImportField(data, "FirstName", "firstName", "first_name");
-          const lastName = getImportField(data, "LastName", "lastName", "last_name");
-          const email = getImportField(data, "Email", "email");
-          const dateOfBirth = getImportField(data, "DateOfBirth", "dateOfBirth");
-          const gender = getImportField(data, "Gender", "gender");
+          const firstName = String(getImportField(data, "firstName") ?? "").trim();
+          const lastName = String(getImportField(data, "lastName") ?? "").trim();
+          email = normalizeImportEmail(getImportField(data, "email"));
+          const gender = getImportField(data, "gender")?.toString().trim() || null;
+          const orgName = String(getImportField(data, "school") ?? "").trim().toLowerCase();
+          const connectCodes = String(getImportField(data, "connectCode") ?? "")
+            .split(/[\s,;/|]+/)
+            .map((code) => code.trim())
+            .filter(Boolean);
 
-          if (!firstName || !lastName || !email) {
-            failedEntries.push({ row: data, error: "Missing firstName, lastName, or email" });
+          if (!firstName) {
+            fail(rowNumber, email, "REQUIRED_FIELD_MISSING", "firstName is required", "firstName");
+            continue;
+          }
+          if (!lastName) {
+            fail(rowNumber, email, "REQUIRED_FIELD_MISSING", "lastName is required", "lastName");
+            continue;
+          }
+          if (!email) {
+            fail(rowNumber, email, "REQUIRED_FIELD_MISSING", "email is required", "email");
+            continue;
+          }
+          if (!isValidImportEmail(email)) {
+            fail(rowNumber, email, "INVALID_EMAIL", "email format is invalid", "email");
+            continue;
+          }
+          const earlierRow = firstRowOfEmail.get(email);
+          if (earlierRow !== undefined) {
+            fail(rowNumber, email, "DUPLICATE_EMAIL_IN_FILE", `email repeats row ${earlierRow} of this file`, "email");
+            continue;
+          }
+          firstRowOfEmail.set(email, rowNumber);
+
+          const dateOfBirth = parseImportDate(getImportField(data, "DateOfBirth"));
+          if (dateOfBirth === null) {
+            fail(rowNumber, email, "INVALID_DATE", "DateOfBirth is not a valid date (use YYYY-MM-DD)", "DateOfBirth");
             continue;
           }
 
-          if (await User.findOne({ where: { email } })) {
-            failedEntries.push({ row: data, error: "Email is already in use" });
+          // The school this parent belongs to: always the School Admin's own
+          // school; for a Super Admin the optional `school` column.
+          let organization: Organization | null = adminOrganization;
+          if (adminOrganization) {
+            if (orgName && adminOrganization.name.trim().toLowerCase() !== orgName) {
+              fail(rowNumber, email, "FORBIDDEN_ORGANIZATION", "school admins can import only into their own school", "school");
+              continue;
+            }
+          } else if (orgName) {
+            organization = await findOrganization(`name:${orgName}`, () =>
+              Organization.findOne({ where: { name: orgName } }),
+            );
+            if (!organization) {
+              fail(rowNumber, email, "ORGANIZATION_NOT_FOUND", "school not found; create it before importing", "school");
+              continue;
+            }
+          }
+
+          // Optional child link(s) by the child's connect code. Validated before
+          // anything is created so a bad code never leaves a half-made parent.
+          const children: Student[] = [];
+          let childError: [string, string] | null = null;
+          for (const code of connectCodes) {
+            const child = await Student.findOne({ where: { connectCode: code } });
+            if (!child || (organization && child.organizationId !== organization.id)) {
+              childError = ["CHILD_NOT_FOUND", `connectCode ${code} does not match a student in this organization`];
+              break;
+            }
+            if (child.ParentId != null) {
+              childError = ["CHILD_ALREADY_LINKED", `connectCode ${code} belongs to a child already linked to a parent`];
+              break;
+            }
+            children.push(child);
+          }
+          if (childError) {
+            fail(rowNumber, email, childError[0], childError[1], "connectCode");
             continue;
           }
 
-          const password = generateSixDigitPassword();
-          const hashedPassword = bcrypt.hashSync(password, 10);
+          if (await User.findOne({ where: { email }, attributes: ["id"] })) {
+            fail(rowNumber, email, "EMAIL_CONFLICT", "email is already in use", "email");
+            continue;
+          }
 
-          // User + Parent must be created together — otherwise a failure in
-          // Parent.create after User.create already committed leaves an
-          // orphaned user (no parent record, email permanently "taken").
+          const password = generateImportPassword();
+          const hashedPassword = await hashPasswordOffThread(password, 10);
+
+          // User + Parent (+ child links) are created together — otherwise a
+          // failure after User.create already committed leaves an orphaned
+          // user (no parent record, email permanently "taken").
           let user!: User;
           let new_parent!: Parent;
           await User.sequelize!.transaction(async (t) => {
@@ -697,48 +825,86 @@ const addParent = async (req: Request, res: Response) => {
                 email,
                 role: "Parent",
                 password: hashedPassword,
-                dateOfBirth: dateOfBirth || null,
-                gender: gender || null,
+                dateOfBirth: (dateOfBirth ?? null) as any,
+                gender,
                 isAccess: true,
                 otpVerified: true,
               },
               { transaction: t }
             );
 
-            new_parent = await Parent.create({ userId: user.id }, { transaction: t });
+            new_parent = await Parent.create(
+              { userId: user.id, organizationId: organization?.id ?? null },
+              { transaction: t },
+            );
+
+            for (const child of children) {
+              // Guarded so a child linked meanwhile is never taken over.
+              const [linked] = await Student.update(
+                { ParentId: new_parent.id },
+                { where: { id: child.id, ParentId: null }, transaction: t },
+              );
+              if (linked !== 1) {
+                const error: any = new Error("child already linked");
+                error.importFailure = ["CHILD_ALREADY_LINKED", `connectCode ${child.connectCode} belongs to a child already linked to a parent`];
+                throw error;
+              }
+            }
           });
 
-          let emailSent = false;
-          try {
-            await sendEmail({
-              to: email,
-              subject: "Your account in Snabel elahssan",
-              text: `Your email is ${email}, and your password is ${password}. Log in at ${getAppUrl()}`,
-              html: buildAccountCreatedEmail({ firstName, email, password, roleLabel: "parent" }),
-              attachments: getEmailAttachments(),
-            });
-            emailSent = true;
-          } catch (emailError) {
-            logger.error("Failed to send onboarding email (non-blocking):", { emailError, email });
-          }
-
-          successfulEntries.push({
-            row: data,
+          if (organization) targetOrganizationIds.add(organization.id);
+          const entry = {
+            rowNumber,
+            email,
             message: "Parent added successfully",
             parentId: new_parent.id,
-            emailSent,
-          });
-        } catch (error) {
-          failedEntries.push({
-            row: data,
-            error: error instanceof Error ? error.message : String(error),
-          });
+            linkedStudentIds: children.map((child) => child.id),
+            emailSent: false,
+          };
+          successfulEntries.push(entry);
+          pendingEmails.push({ entry, firstName, email, password, userId: user.id });
+        } catch (error: any) {
+          if (Array.isArray(error?.importFailure)) {
+            fail(rowNumber, email, error.importFailure[0], error.importFailure[1], "connectCode");
+          } else {
+            failedEntries.push(describeRowError(rowNumber, error, email));
+            logger.error("Parent import row failed", { error, sheet, rowNumber });
+          }
         }
       }
     }
 
+    await runWithConcurrency(pendingEmails, 5, async ({ entry, firstName, email, password, userId }) => {
+      try {
+        await sendEmail({
+          to: email,
+          userId,
+          purpose: "ADMIN_INVITE",
+          subject: "Your account in Snabel elahssan",
+          text: `Your email is ${email}, and your password is ${password}. Log in at ${getAppUrl()}`,
+          html: buildAccountCreatedEmail({ firstName, email, password, roleLabel: "parent" }),
+          attachments: getEmailAttachments(),
+        });
+        entry.emailSent = true;
+      } catch (emailError) {
+        logger.error("Failed to send onboarding email (non-blocking):", { emailError, parentId: entry.parentId });
+      }
+    });
+
+    // Import telemetry. Recorded after the rows are written and deliberately
+    // non-fatal: see `helpers/importRunRecorder` for why one row is one
+    // submitted batch rather than one uploaded file.
+    await recordImportRun(req, {
+      entityType: "parents",
+      succeeded: successfulEntries.length,
+      failed: failedEntries.length,
+      targetOrganizationId:
+        targetOrganizationIds.size === 1 ? [...targetOrganizationIds][0] : null,
+    });
+
     res.json({
       message: "Parent import completed",
+      total: successfulEntries.length + failedEntries.length,
       successCount: successfulEntries.length,
       failureCount: failedEntries.length,
       successfulEntries,
@@ -746,7 +912,7 @@ const addParent = async (req: Request, res: Response) => {
     });
   } catch (error) {
     logger.error("Error processing Excel file (parent import):", { error });
-    res.status(500).json({ message: "Internal server error", error });
+    res.status(500).json({ message: "Internal server error" });
   }
 };
 

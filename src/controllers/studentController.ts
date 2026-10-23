@@ -12,20 +12,32 @@ import Challenge from "../models/challenge.model";
 import Organization from "../models/oraganization.model";
 import Class from "../models/class.model";
 import Grade from "../models/grade.model";
-import { generatePassword, generateSixDigitPassword } from "../helpers/generatePassword";
+import { generatePassword, generateSixDigitPassword, generateImportPassword } from "../helpers/generatePassword";
 import { sendEmail } from "../helpers/sendEmail";
 import { buildAccountCreatedEmail, getEmailAttachments, getAppUrl } from "../helpers/emailTemplates";
 import ExcelJS from "exceljs";
 import path from "path";
 import fs from "fs";
 import Tree from "../models/tree.model";
-import { Sequelize, QueryTypes, where } from "sequelize";
-import { Op, fn, col, literal } from "sequelize";
+// v7 helpers: the models are @sequelize/core v7, and a v6 `where()`/`fn()`
+// object is rejected by a v7 model ("Invalid value received for the where option").
+import { Sequelize, QueryTypes, where, Op, fn, col, literal } from "@sequelize/core";
 import TaskCategory from "../models/task-category.model";
 import Teacher from "../models/teacher.model";
 import Parent from "../models/parent.model";
 import generateUniqueConnectCode from "../helpers/generateRandomconnectcode";
-import { getImportField } from "../helpers/importFieldLookup";
+import { getImportField, hasImportColumn } from "../helpers/importFieldLookup";
+import {
+  ImportFailure,
+  describeRowError,
+  importRowNumber,
+  isValidImportEmail,
+  normalizeImportEmail,
+  parseImportDate,
+  rowFailure,
+  runWithConcurrency,
+} from "../helpers/importRow";
+import { hashPasswordOffThread } from "../helpers/passwordHashPool";
 import { buildCategoryCounts } from "../helpers/taskCategoryStats";
 import {
   computeSanabelCostPerColor,
@@ -34,6 +46,9 @@ import {
 } from "../helpers/shopPricing";
 import { completeMissionForStudent } from "../helpers/completeMission";
 import { utcGameplayDate } from "../services/studentTodoService";
+import { requiresMissionApproval } from "../helpers/studentGameplayMode";
+import { accountCreatedAtIso } from "../helpers/accountIdentity";
+import { recordImportRun } from "../helpers/importRunRecorder";
 
 declare global {
   namespace Express {
@@ -64,6 +79,12 @@ const studentData = async (req: Request, res: Response) => {
             "gender",
             "dateOfBirth",
             "seenGuides",
+            // Account age, not profile data: the tutorial rollout must be able
+            // to tell an account created before Tutorial V2 shipped from a new
+            // one. `Users.createdAt` is the authoritative account creation
+            // time; `Students.createdAt` records when the learner profile row
+            // was written, which import runs and re-linking can move.
+            "createdAt",
           ],
         },
         {
@@ -96,8 +117,12 @@ const studentData = async (req: Request, res: Response) => {
         attributes: ["id", "seeders", "water", "stage", "treeProgress"],
       });
       const missionDate = new Date().toISOString().slice(0, 10);
+      // One canonical field for account age, as an ISO string, so the client
+      // never has to know which nested record carries the timestamp. The
+      // normalisation is shared with the Teacher and Parent profiles.
       const responseData = {
         student,
+        accountCreatedAt: accountCreatedAtIso((student as any).user?.createdAt),
         treePoint: treePoint || null,
         completedTasks: {
           date: missionDate,
@@ -316,7 +341,7 @@ const appearTaskesTypeandCategory = async (req: Request, res: Response) => {
         studentId: student.id,
         taskId: { [Op.in]: taskIds },
         completionStatus: "Completed",
-        ...(student.classId ? { updatedAt: { [Op.between]: [startOfDay, endOfDay] } } : { date: missionDate }),
+        ...(requiresMissionApproval(student) ? { updatedAt: { [Op.between]: [startOfDay, endOfDay] } } : { date: missionDate }),
       },
       attributes: ["taskId"],
       raw: true,
@@ -957,17 +982,15 @@ const appearChallangesPrimaire = async (req: Request, res: Response) => {
   }
 };
 
-// GET /leaderboard?grade=5&gender=Female
 const appearLeaderboard = async (req: Request, res: Response) => {
   try {
     const user = (req as Request & { user?: JwtPayload }).user;
     if (!user) return res.status(401).json({ message: "Unauthorized" });
 
     const { className, grade, gender } = req.query;
-    if (className && !grade ) {
+    if (className && !grade) {
       return res.status(400).json({
-        message:
-          "If 'className' is provided, 'grade' must also be included.",
+        message: "If 'className' is provided, 'grade' must also be included.",
       });
     }
 
@@ -989,37 +1012,72 @@ const appearLeaderboard = async (req: Request, res: Response) => {
     if (className) classFilters.classname = className;
     if (grade) classFilters.grade = grade;
 
+    // Resolve the organization id and load its leaderboard settings.
+    let orgId: number | null = null;
     if (teacher) {
-      let orgId = teacher.organizationId;
+      orgId = teacher.organizationId ?? null;
       if (!orgId) {
-        // Fallback: look up the teacher's classes to resolve organizationId
         const firstClass = await Class.findOne({
           where: { teacherId: teacher.id },
           attributes: ["organizationId"],
         });
-        if (firstClass) {
-          orgId = firstClass.organizationId;
-        }
+        if (firstClass) orgId = firstClass.organizationId ?? null;
       }
-      if (!orgId) {
-        return res.status(200).json({ students: [] });
-      }
+      if (!orgId) return res.status(200).json({ students: [] });
       studentFilters.organizationId = orgId;
     } else if (student) {
-      // For student: if organizationId is null, filter students with organizationId null,
-      // else filter by student's organizationId
-      if (!student.organizationId) {
-        studentFilters.organizationId = null;
-      } else {
-        studentFilters.organizationId = student.organizationId;
+      orgId = student.organizationId ?? null;
+      studentFilters.organizationId = orgId ?? null;
+    }
+
+    // Load org settings (defaults when the org row has no settings yet or
+    // when this is a null-org student).
+    let leaderboardScope: "all_school" | "same_grade" | "same_class" = "all_school";
+    let leaderboardLimit = 50;
+    let hideZeroXp = true;
+    if (orgId) {
+      const org = await Organization.findByPk(orgId, {
+        attributes: ["leaderboardScope", "leaderboardLimit", "hideZeroXpStudents"],
+      });
+      if (org) {
+        leaderboardScope = (org.leaderboardScope as typeof leaderboardScope) ?? "all_school";
+        leaderboardLimit = org.leaderboardLimit ?? 50;
+        hideZeroXp = org.hideZeroXpStudents ?? true;
       }
     }
 
-    const limit = Math.min(Math.max(Number(req.query.limit) || 100, 1), 500);
+    // Apply scope restrictions when no explicit class/grade filter was sent.
+    // Explicit filters always override the scope setting.
+    if (!className && !grade && student && leaderboardScope !== "all_school") {
+      // Need the student's own class to constrain the query.
+      const studentClass = student.classId
+        ? await Class.findByPk(student.classId, { attributes: ["id", "grade"] })
+        : null;
+
+      if (studentClass) {
+        if (leaderboardScope === "same_grade") {
+          classFilters.grade = studentClass.grade;
+        } else if (leaderboardScope === "same_class") {
+          studentFilters.classId = studentClass.id;
+        }
+      }
+    }
+
+    // Apply the query limit (capped at 500; explicit limit param overrides org default).
+    // A non-numeric limit falls back to the org default instead of NaN.
+    const requestedLimit = Number(req.query.limit) || leaderboardLimit;
+    const limit = Math.min(Math.max(requestedLimit, 1), 500);
     const offset = Math.max(Number(req.query.offset) || 0, 0);
 
+    if (hideZeroXp) {
+      studentFilters.xp = { [Op.gt]: 0 };
+    }
+
+    // Display fields only: never connectCode, balances or email in a list
+    // every classmate/teacher can read.
     const students = await Student.findAll({
       where: studentFilters,
+      attributes: ["id", "userId", "xp"],
       include: [
         {
           model: User,
@@ -1028,7 +1086,6 @@ const appearLeaderboard = async (req: Request, res: Response) => {
           attributes: [
             "firstName",
             "lastName",
-            "email",
             "profileImg",
             "gender",
           ],
@@ -1036,11 +1093,17 @@ const appearLeaderboard = async (req: Request, res: Response) => {
         {
           model: Class,
           as: "class",
-          where: classFilters,
+          where: Object.keys(classFilters).length ? classFilters : undefined,
+          required: Object.keys(classFilters).length > 0,
           attributes: ["classname", "grade"],
         },
       ],
-      order: [["xp", "DESC"]],
+      // Primary: XP descending. Stable tie-break on id (Students has no
+      // missionsDone column; ordering by it made every request 500).
+      order: [
+        ["xp", "DESC"],
+        ["id", "ASC"],
+      ],
       limit,
       offset,
     });
@@ -1054,6 +1117,8 @@ const appearLeaderboard = async (req: Request, res: Response) => {
 
 
 const mutationResult = (status: number, body: Record<string, any>) => ({ status, body });
+
+
 
 const buyWaterSeeder = async (req: Request, res: Response) => {
   try {
@@ -1405,6 +1470,8 @@ const addStudentLegacy = async (req: Request, res: Response) => {
           try {
             await sendEmail({
               to: email,
+              userId: new_user.id,
+              purpose: "ADMIN_INVITE",
               subject: "Your account in Snabel elahssan",
               text: `Your email is ${email}, and your password is ${password}. Log in at ${getAppUrl()}`,
               html: buildAccountCreatedEmail({
@@ -1468,6 +1535,15 @@ const addStudentLegacy = async (req: Request, res: Response) => {
     }
 
     // ✅ Response with Summary
+    // Import telemetry. Recorded after the rows are written and deliberately
+    // non-fatal: see `helpers/importRunRecorder` for why one row is one
+    // submitted batch rather than one uploaded file.
+    await recordImportRun(req, {
+      entityType: "students",
+      succeeded: successfulEntries.length,
+      failed: failedEntries.length,
+    });
+
     res.json({
       message: "Excel file processing completed",
       successCount: successfulEntries.length,
@@ -1486,11 +1562,7 @@ const addStudentLegacy = async (req: Request, res: Response) => {
 const addStudent = async (req: Request, res: Response) => {
   const processedData: any = req.processedData;
   const successfulEntries: any[] = [];
-  const failedEntries: any[] = [];
-  const organizationFiles: Record<
-    string,
-    { workbook: ExcelJS.Workbook; worksheet: ExcelJS.Worksheet }
-  > = {};
+  const failedEntries: ImportFailure[] = [];
   const adminScope = (
     req as Request & { adminOrganizationId?: number | null }
   ).adminOrganizationId ?? null;
@@ -1500,273 +1572,281 @@ const addStudent = async (req: Request, res: Response) => {
     email: string,
     code: string,
     message: string,
-  ) => failedEntries.push({ rowNumber, email: email || null, code, message });
+    column?: string,
+  ) => failedEntries.push(rowFailure(rowNumber, code, message, column, email));
 
   if (!processedData || typeof processedData !== "object") {
     return res.status(400).json({ message: "No processed import data found" });
   }
 
+  // A file without a grade/class column fails every row naming that column.
+  const headers = req.importHeaders;
+  const gradeColumnMissing = !!headers && !hasImportColumn(headers, "grade");
+  const classColumnMissing = !!headers && !hasImportColumn(headers, "class");
+
+  // One lookup per organization / grade / class per request instead of per row.
+  const orgCache = new Map<string, Promise<Organization | null>>();
+  const gradeCache = new Map<string, Promise<Grade | null>>();
+  const classCache = new Map<string, Promise<Class | null>>();
+  const cached = <T,>(cache: Map<string, Promise<T>>, key: string, load: () => Promise<T>) => {
+    if (!cache.has(key)) cache.set(key, load());
+    return cache.get(key)!;
+  };
+  const firstRowOfEmail = new Map<string, number>();
+  const targetOrganizationIds = new Set<number>();
+  const pendingEmails: Array<{ entry: any; firstName: string; email: string; password: string; userId: number }> = [];
+  const createJobs: Array<() => Promise<void>> = [];
+  const issuedConnectCodes = new Set<string>();
+
   try {
+    let adminOrganization: Organization | null = null;
+    if (adminScope !== null) {
+      adminOrganization = await Organization.findByPk(adminScope);
+      if (!adminOrganization) {
+        return res.status(403).json({
+          code: "ADMIN_SCOPE_INVALID",
+          message: "The administrator's organization no longer exists",
+        });
+      }
+    }
+
     for (const sheet in processedData) {
       const rows = Array.isArray(processedData[sheet]) ? processedData[sheet] : [];
       for (let rowIndex = 0; rowIndex < rows.length; rowIndex += 1) {
         const data = rows[rowIndex];
-        const rowNumber = rowIndex + 2;
+        const rowNumber = importRowNumber(data, rowIndex);
         let email = "";
 
         try {
-          const firstName = String(
-            getImportField(data, "FirstName", "firstName", "first_name") || "",
-          ).trim();
-          const lastName = String(
-            getImportField(data, "LastName", "lastName", "last_name") || "",
-          ).trim();
-          email = String(getImportField(data, "Email", "email") || "")
+          const firstName = String(getImportField(data, "firstName") ?? "").trim();
+          const lastName = String(getImportField(data, "lastName") ?? "").trim();
+          email = normalizeImportEmail(getImportField(data, "email"));
+          const orgName = String(getImportField(data, "school") ?? "")
             .trim()
             .toLowerCase();
-          const orgName = String(
-            getImportField(
-              data,
-              "OrganizationName",
-              "organizationName",
-              "school",
-              "School",
-            ) || "",
-          )
+          const gradeName = String(getImportField(data, "grade") ?? "")
             .trim()
             .toLowerCase();
-          const gradeName = String(
-            getImportField(data, "Grade", "grade") || "",
-          )
-            .trim()
-            .toLowerCase();
-          const className = String(
-            getImportField(data, "ClassName", "className", "class", "Class") || "",
-          ).trim();
+          const className = String(getImportField(data, "class") ?? "").trim();
 
-          if (!firstName || !lastName || !email) {
+          if (!firstName) {
+            fail(rowNumber, email, "REQUIRED_FIELD_MISSING", "firstName is required", "firstName");
+            continue;
+          }
+          if (!lastName) {
+            fail(rowNumber, email, "REQUIRED_FIELD_MISSING", "lastName is required", "lastName");
+            continue;
+          }
+          if (!email) {
+            fail(rowNumber, email, "REQUIRED_FIELD_MISSING", "email is required", "email");
+            continue;
+          }
+          if (!isValidImportEmail(email)) {
+            fail(rowNumber, email, "INVALID_EMAIL", "email format is invalid", "email");
+            continue;
+          }
+          const earlierRow = firstRowOfEmail.get(email);
+          if (earlierRow !== undefined) {
+            fail(rowNumber, email, "DUPLICATE_EMAIL_IN_FILE", `email repeats row ${earlierRow} of this file`, "email");
+            continue;
+          }
+          firstRowOfEmail.set(email, rowNumber);
+
+          const dateOfBirth = parseImportDate(getImportField(data, "DateOfBirth"));
+          if (dateOfBirth === null) {
+            fail(rowNumber, email, "INVALID_DATE", "DateOfBirth is not a valid date (use YYYY-MM-DD)", "DateOfBirth");
+            continue;
+          }
+
+          let organization: Organization | null;
+          if (adminOrganization) {
+            if (orgName && adminOrganization.name.trim().toLowerCase() !== orgName) {
+              fail(rowNumber, email, "FORBIDDEN_ORGANIZATION", "school admins can import only into their own school", "school");
+              continue;
+            }
+            organization = adminOrganization;
+          } else {
+            if (!orgName) {
+              fail(rowNumber, email, "ORGANIZATION_REQUIRED", "school is required", "school");
+              continue;
+            }
+            organization = await cached(orgCache, orgName, () =>
+              Organization.findOne({ where: { name: orgName } }),
+            );
+            if (!organization) {
+              fail(rowNumber, email, "ORGANIZATION_NOT_FOUND", "school not found; create it before importing", "school");
+              continue;
+            }
+          }
+          const orgId = organization.id;
+          targetOrganizationIds.add(orgId);
+
+          // Business rule: every imported student has a grade.
+          if (!gradeName) {
             fail(
               rowNumber,
               email,
-              "REQUIRED_FIELD_MISSING",
-              "firstName, lastName and email are required",
+              "GRADE_REQUIRED",
+              gradeColumnMissing ? "grade column is missing from the file" : "grade is required",
+              "grade",
             );
             continue;
           }
-          if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
-            fail(rowNumber, email, "INVALID_EMAIL", "Email format is invalid");
+          const gradeRecord = await cached(gradeCache, `${orgId}|${gradeName}`, async () =>
+            (await Grade.findOne({ where: { name: gradeName, organizationId: orgId } })) ??
+            (await Grade.findOne({ where: { name: gradeName, organizationId: null } })),
+          );
+          if (!gradeRecord) {
+            fail(rowNumber, email, "GRADE_NOT_FOUND", "grade not found in this organization", "grade");
             continue;
           }
 
-          let organization: Organization | null = null;
-          if (adminScope !== null) {
-            organization = await Organization.findByPk(adminScope);
-            if (!organization) {
-              fail(
-                rowNumber,
-                email,
-                "ADMIN_SCOPE_INVALID",
-                "The administrator's organization no longer exists",
-              );
-              continue;
-            }
-            if (orgName && organization.name.trim().toLowerCase() !== orgName) {
-              fail(
-                rowNumber,
-                email,
-                "FORBIDDEN_ORGANIZATION",
-                "School admins cannot import students into another organization",
-              );
-              continue;
-            }
-          } else {
-            if (!orgName) {
-              fail(
-                rowNumber,
-                email,
-                "ORGANIZATION_REQUIRED",
-                "School/organization is required",
-              );
-              continue;
-            }
-            organization = await Organization.findOne({ where: { name: orgName } });
-            if (!organization) {
-              fail(
-                rowNumber,
-                email,
-                "ORGANIZATION_NOT_FOUND",
-                "Organization does not exist; create it before importing students",
-              );
-              continue;
-            }
+          // Template/docs: class is required for a school import.
+          if (!className) {
+            fail(
+              rowNumber,
+              email,
+              "CLASS_REQUIRED",
+              classColumnMissing ? "class column is missing from the file" : "class is required",
+              "class",
+            );
+            continue;
           }
-
-          let gradeRecord: Grade | null = null;
-          if (gradeName) {
-            gradeRecord = await Grade.findOne({
-              where: { name: gradeName, organizationId: organization.id },
-            });
-            if (!gradeRecord) {
-              gradeRecord = await Grade.findOne({
-                where: { name: gradeName, organizationId: null },
-              });
-            }
-            if (!gradeRecord) {
-              fail(
-                rowNumber,
-                email,
-                "GRADE_NOT_FOUND",
-                "Grade does not exist in this organization",
-              );
-              continue;
-            }
-          }
-
-          let classRecord: Class | null = null;
-          if (className) {
-            classRecord = await Class.findOne({
+          const classKey = className.toLowerCase();
+          const classRecord = await cached(classCache, `${orgId}|${classKey}`, () =>
+            Class.findOne({
               where: {
-                organizationId: organization.id,
-                [Op.and]: where(
-                  fn("LOWER", col("classname")),
-                  className.toLowerCase(),
-                ),
+                organizationId: orgId,
+                [Op.and]: where(fn("LOWER", col("classname")), classKey),
               } as any,
-            });
-            if (!classRecord) {
-              fail(
-                rowNumber,
-                email,
-                "CLASS_NOT_FOUND",
-                "Class does not exist in this organization",
-              );
-              continue;
-            }
-            if (
-              gradeRecord &&
-              classRecord.gradeId != null &&
-              classRecord.gradeId !== gradeRecord.id
-            ) {
-              fail(
-                rowNumber,
-                email,
-                "CLASS_GRADE_MISMATCH",
-                "Class does not belong to the supplied grade",
-              );
-              continue;
-            }
-            if (!gradeRecord && classRecord.gradeId != null) {
-              gradeRecord = await Grade.findByPk(classRecord.gradeId);
-            }
+            }),
+          );
+          if (!classRecord) {
+            fail(rowNumber, email, "CLASS_NOT_FOUND", "class not found in this organization", "class");
+            continue;
           }
-
-          if (await User.findOne({ where: { email } })) {
-            fail(rowNumber, email, "EMAIL_CONFLICT", "Email is already in use");
+          if (classRecord.gradeId != null && classRecord.gradeId !== gradeRecord.id) {
+            fail(rowNumber, email, "CLASS_GRADE_MISMATCH", "class belongs to a different grade", "class");
             continue;
           }
 
-          const password = generateSixDigitPassword();
-          const hashedPassword = bcrypt.hashSync(password, 10);
-          const connectCode = await generateUniqueConnectCode();
-          let newStudent!: Student;
+          if (await User.findOne({ where: { email }, attributes: ["id"] })) {
+            fail(rowNumber, email, "EMAIL_CONFLICT", "email is already in use", "email");
+            continue;
+          }
 
-          await User.sequelize!.transaction(async (transaction) => {
-            const newUser = await User.create(
-              {
-                firstName,
-                lastName,
+          // Validated: the account is created in the concurrent phase below.
+          createJobs.push(async () => {
+              try {
+              const password = generateImportPassword();
+              const hashedPassword = await hashPasswordOffThread(password, 10);
+              let connectCode = await generateUniqueConnectCode();
+              // Rows are created concurrently: never hand out one code twice.
+              while (issuedConnectCodes.has(connectCode)) connectCode = await generateUniqueConnectCode();
+              issuedConnectCodes.add(connectCode);
+              let newStudent!: Student;
+
+              await User.sequelize!.transaction(async (transaction) => {
+                const newUser = await User.create(
+                  {
+                    firstName,
+                    lastName,
+                    email,
+                    role: "Student",
+                    password: hashedPassword,
+                    dateOfBirth: (dateOfBirth ?? null) as any,
+                    gender: getImportField(data, "gender") || null,
+                    isAccess: true,
+                    otpVerified: true,
+                  },
+                  { transaction },
+                );
+                newStudent = await Student.create(
+                  {
+                    connectCode,
+                    treeProgress: 1,
+                    gradeId: gradeRecord.id,
+                    grade: gradeRecord.name,
+                    userId: newUser.id,
+                    organizationId: orgId,
+                    classId: classRecord.id,
+                  },
+                  { transaction },
+                );
+                await ensureStudentChallenges(newStudent.id, transaction);
+              });
+
+              const entry = {
+                rowNumber,
                 email,
-                role: "Student",
-                password: hashedPassword,
-                dateOfBirth:
-                  getImportField(data, "DateOfBirth", "dateOfBirth") || null,
-                gender: getImportField(data, "Gender", "gender") || null,
-                isAccess: true,
-                otpVerified: true,
-              },
-              { transaction },
-            );
-            newStudent = await Student.create(
-              {
+                message: "Student added successfully",
+                studentId: newStudent.id,
                 connectCode,
-                treeProgress: 1,
-                gradeId: gradeRecord?.id ?? null,
-                grade: gradeRecord?.name ?? null,
-                userId: newUser.id,
-                organizationId: organization!.id,
-                classId: classRecord?.id ?? null,
-              },
-              { transaction },
-            );
-            await ensureStudentChallenges(newStudent.id, transaction);
-          });
-
-          if (!organizationFiles[organization.name]) {
-            const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet("Users");
-            worksheet.columns = [
-              { header: "Email", key: "email", width: 30 },
-              { header: "Password", key: "password", width: 20 },
-            ];
-            organizationFiles[organization.name] = { workbook, worksheet };
-          }
-          organizationFiles[organization.name].worksheet.addRow({ email, password });
-
-          let emailSent = false;
-          try {
-            await sendEmail({
-              to: email,
-              subject: "Your account in Snabel elahssan",
-              text: `Your email is ${email}, and your password is ${password}. Log in at ${getAppUrl()}`,
-              html: buildAccountCreatedEmail({
-                firstName,
-                email,
-                password,
-                roleLabel: "student",
-              }),
-              attachments: getEmailAttachments(),
-            });
-            emailSent = true;
-          } catch (emailError) {
-            logger.error("Failed to send student onboarding email (non-blocking)", {
-              emailError,
-              studentId: newStudent.id,
-            });
-          }
-
-          successfulEntries.push({
-            rowNumber,
-            email,
-            message: "Student added successfully",
-            studentId: newStudent.id,
-            connectCode,
-            emailSent,
-            needsReview: !classRecord || !gradeRecord,
+                emailSent: false,
+              };
+              successfulEntries.push(entry);
+              pendingEmails.push({ entry, firstName, email, password, userId: newStudent.userId });
+            } catch (error: any) {
+              failedEntries.push(describeRowError(rowNumber, error, email));
+              logger.error("Student import row failed", { error, sheet, rowNumber });
+            }
           });
         } catch (error: any) {
-          const conflict = error?.name === "SequelizeUniqueConstraintError";
-          fail(
-            rowNumber,
-            email,
-            conflict ? "DUPLICATE_VALUE" : "ROW_FAILED",
-            conflict
-              ? "A unique value is already in use"
-              : "The row could not be imported",
-          );
+          failedEntries.push(describeRowError(rowNumber, error, email));
           logger.error("Student import row failed", { error, sheet, rowNumber });
         }
       }
     }
 
-    const outputDir = path.resolve(__dirname, "../../output");
-    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
-    const files: string[] = [];
-    for (const orgName in organizationFiles) {
-      const safeName = orgName.replace(/[\/\\?%*:|"<>]/g, "_");
-      const filePath = path.resolve(outputDir, `${safeName}_Users.xlsx`);
-      await organizationFiles[orgName].workbook.xlsx.writeFile(filePath);
-      files.push(path.basename(filePath));
-    }
+    // Account creation, a few rows at a time: one row's bcrypt hashing (CPU)
+    // overlaps another row's transaction (mostly waiting on MySQL to insert
+    // the per-student challenge rows), roughly halving the time per row.
+    // Emails are unique within the batch (checked above), so concurrent rows
+    // never compete for the same account.
+    await runWithConcurrency(createJobs, 3, (job) => job());
+    successfulEntries.sort((a, b) => a.rowNumber - b.rowNumber);
+    failedEntries.sort((a, b) => a.rowNumber - b.rowNumber);
+
+    // Credentials go out only by email (never written to disk or echoed).
+    // Sent after the rows are written, a few at a time, so one slow SMTP round
+    // trip no longer gates every row; `emailSent` tells the UI which accounts
+    // need their credentials delivered another way.
+    await runWithConcurrency(pendingEmails, 5, async ({ entry, firstName, email, password, userId }) => {
+      try {
+        await sendEmail({
+          to: email,
+          userId,
+          purpose: "ADMIN_INVITE",
+          subject: "Your account in Snabel elahssan",
+          text: `Your email is ${email}, and your password is ${password}. Log in at ${getAppUrl()}`,
+          html: buildAccountCreatedEmail({
+            firstName,
+            email,
+            password,
+            roleLabel: "student",
+          }),
+          attachments: getEmailAttachments(),
+        });
+        entry.emailSent = true;
+      } catch (emailError) {
+        logger.error("Failed to send student onboarding email (non-blocking)", {
+          emailError,
+          studentId: entry.studentId,
+        });
+      }
+    });
+
+    // Import telemetry. Recorded after the rows are written and deliberately
+    // non-fatal: see `helpers/importRunRecorder` for why one row is one
+    // submitted batch rather than one uploaded file. A Super Admin import into
+    // exactly one school is recorded against that school.
+    await recordImportRun(req, {
+      entityType: "students",
+      succeeded: successfulEntries.length,
+      failed: failedEntries.length,
+      targetOrganizationId:
+        targetOrganizationIds.size === 1 ? [...targetOrganizationIds][0] : null,
+    });
 
     return res.status(200).json({
       message: "Student import completed",
@@ -1777,7 +1857,6 @@ const addStudent = async (req: Request, res: Response) => {
       failureCount: failedEntries.length,
       successfulEntries,
       failedEntries,
-      files,
     });
   } catch (error) {
     logger.error("Error processing student import", { error });
@@ -1983,7 +2062,7 @@ const addPros = async (req: Request, res: Response) => {
     const result = await Student.sequelize.transaction(async (transaction: any) => {
       const student = await Student.findOne({ where: { userId: user.id }, transaction, lock: transaction?.LOCK?.UPDATE });
       if (!student) return mutationResult(404, { message: "Student not found" });
-      if (student.classId) return mutationResult(403, { message: "School Students must request approval for mission completion" });
+      if (requiresMissionApproval(student)) return mutationResult(403, { message: "School Students must request approval for mission completion" });
       const completion = await completeMissionForStudent({ studentId: student.id, taskId,
         missionDate: utcGameplayDate(), source: "solo_self", recordedAt: new Date(), transaction });
       return mutationResult(completion.alreadyCompleted ? 200 : 201, {

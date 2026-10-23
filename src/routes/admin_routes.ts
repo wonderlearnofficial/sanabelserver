@@ -2,6 +2,7 @@ import { authenticateToken } from "../middleware/auth";
 import { checkAdmin, requireSuperAdmin } from "../middleware/checkrole";
 import * as adminController from "../controllers/adminController";
 import * as analyticsController from "../controllers/analyticsController";
+import * as operationalAnalyticsController from "../controllers/operationalAnalyticsController";
 import * as appConfigController from "../controllers/appConfigController";
 import upload from "../middleware/uploadExcel";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
@@ -121,6 +122,119 @@ router.get("/analytics/approvals", ...superAdminOnly, analyticsController.approv
  *       403: { description: Super Admin access required }
  */
 router.get("/analytics/assignments", ...superAdminOnly, analyticsController.assignments);
+router.get("/analytics/dashboard", ...superAdminOnly, operationalAnalyticsController.dashboard);
+router.get("/analytics/activity", ...superAdminOnly, operationalAnalyticsController.activity);
+router.get("/analytics/emails", ...superAdminOnly, operationalAnalyticsController.emails);
+router.get("/analytics/imports", ...superAdminOnly, operationalAnalyticsController.imports);
+router.get("/analytics/data-quality", ...superAdminOnly, operationalAnalyticsController.dataQuality);
+router.get("/analytics/system-health", ...superAdminOnly, operationalAnalyticsController.systemHealth);
+
+// ── Admin operations pages ────────────────────────────────────────────────
+//
+// These four handlers existed in `adminController` and were exported, but no
+// route referenced them, so the whole feature was unreachable. Registered here
+// with the gate each one's own documentation states.
+//
+// Scope, as always, is resolved server-side: `checkAdmin` reads the acting
+// admin's organization from the `Admins` table on every request, and the two
+// org-scoped handlers below read it through `getAdminScope(req)`. A School Admin
+// cannot widen their scope with a query parameter, and their organization is
+// never taken from the request.
+
+/**
+ * @swagger
+ * /admin/school-dashboard:
+ *   get:
+ *     summary: Organization-scoped dashboard counters for the acting admin
+ *     description: |
+ *       A School Admin receives counts for their own organization only; a Super
+ *       Admin receives the same shape computed globally. The organization comes
+ *       from `Admins.organizationId` — never from the request.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  "/school-dashboard",
+  authenticateToken,
+  checkAdmin,
+  adminController.getSchoolAdminDashboard,
+);
+
+/**
+ * @swagger
+ * /admin/import-analytics:
+ *   get:
+ *     summary: Import run counts and the most recent runs
+ *     description: |
+ *       Reads `ImportRuns` metadata only — counts per run, never the uploaded
+ *       spreadsheet. A School Admin sees their own organization's runs; a Super
+ *       Admin sees every run.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ */
+router.get(
+  "/import-analytics",
+  authenticateToken,
+  checkAdmin,
+  adminController.getImportAnalytics,
+);
+
+/**
+ * @swagger
+ * /admin/data-quality:
+ *   get:
+ *     summary: Platform-wide data integrity counters (Super Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       403: { description: Super Admin access required }
+ */
+/**
+ * @swagger
+ * /admin/school-data-quality:
+ *   get:
+ *     summary: Warnings for the acting admin's own school
+ *     description: |
+ *       The School Admin counterpart to `/admin/data-quality`. Scope comes from
+ *       `Admins.organizationId`; a Super Admin receives 400 and is directed to
+ *       the platform-wide endpoint, because "my school" has no meaning for a
+ *       global account.
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: School-scoped warning counts }
+ *       400: { description: Caller is a Super Admin; use /admin/data-quality }
+ */
+router.get(
+  "/school-data-quality",
+  authenticateToken,
+  checkAdmin,
+  adminController.getSchoolDataQuality,
+);
+
+router.get("/data-quality", ...superAdminOnly, adminController.getDataQuality);
+
+/**
+ * @swagger
+ * /admin/data-quality/detail:
+ *   get:
+ *     summary: Paginated drill-down for one data-quality issue (Super Admin only)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       400: { description: Missing or unknown issue type }
+ *       403: { description: Super Admin access required }
+ */
+router.get(
+  "/data-quality/detail",
+  ...superAdminOnly,
+  adminController.getDataQualityDetail,
+);
 
 /**
  * @swagger
@@ -167,7 +281,12 @@ router.get("/stats", authenticateToken, checkAdmin, adminController.getAdminStat
  *       - bearerAuth: []
  */
 router.get("/organizations", authenticateToken, checkAdmin, adminController.listOrganizations);
-router.post("/organizations", authenticateToken, checkAdmin, adminController.createOrganization);
+// Creating, renaming and deleting a school is platform management, not
+// school administration. The controllers already answer 403 for a scoped
+// admin; the gate lives here as well so it is visible at the route and
+// enforced before the handler runs. The two GETs below stay open, scoped
+// to the acting admin's own organization.
+router.post("/organizations", ...superAdminOnly, adminController.createOrganization);
 
 /**
  * @swagger
@@ -189,8 +308,8 @@ router.post("/organizations", authenticateToken, checkAdmin, adminController.cre
  *       - bearerAuth: []
  */
 router.get("/organizations/:organizationId", authenticateToken, checkAdmin, adminController.getOrganization);
-router.patch("/organizations/:organizationId", authenticateToken, checkAdmin, adminController.updateOrganization);
-router.delete("/organizations/:organizationId", authenticateToken, checkAdmin, adminController.deleteOrganization);
+router.patch("/organizations/:organizationId", ...superAdminOnly, adminController.updateOrganization);
+router.delete("/organizations/:organizationId", ...superAdminOnly, adminController.deleteOrganization);
 
 /**
  * @swagger
@@ -408,8 +527,8 @@ router.get("/history", authenticateToken, checkAdmin, adminController.listTaskHi
  *     security:
  *       - bearerAuth: []
  */
-router.get("/app-version", authenticateToken, checkAdmin, appConfigController.getAdminAppConfigs);
-router.put("/app-version", authenticateToken, checkAdmin, appConfigController.updateAdminAppConfig);
+router.get("/app-version", ...superAdminOnly, appConfigController.getAdminAppConfigs);
+router.put("/app-version", ...superAdminOnly, appConfigController.updateAdminAppConfig);
 
 /**
  * @swagger
@@ -421,15 +540,89 @@ router.put("/app-version", authenticateToken, checkAdmin, appConfigController.up
  *       - bearerAuth: []
  */
 router.post(
+  "/impersonation",
+  authenticateToken,
+  checkAdmin,
+  adminController.createImpersonationHandoff,
+);
+router.post(
   "/students/:studentId/impersonate",
   authenticateToken,
   checkAdmin,
-  adminController.impersonateStudent,
+  adminController.createImpersonationHandoff,
 );
 router.post(
   "/impersonate-student/:studentId",
   authenticateToken,
   checkAdmin,
-  adminController.impersonateStudent,
+  adminController.createImpersonationHandoff,
 );
 
+// ── Leaderboard settings ──────────────────────────────────────────────────────
+// School Admin: reads/writes their own school only (server enforces scope).
+// Super Admin:  reads all schools (GET list) or targets one via :orgId.
+
+/**
+ * @swagger
+ * /admin/leaderboard-settings:
+ *   get:
+ *     summary: Get leaderboard settings for the acting admin's organization(s)
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     responses:
+ *       200: { description: Leaderboard settings per organization }
+ *       403: { description: Unauthorized }
+ */
+router.get(
+  "/leaderboard-settings",
+  authenticateToken,
+  checkAdmin,
+  adminController.getLeaderboardSettings,
+);
+
+/**
+ * @swagger
+ * /admin/leaderboard-settings/{orgId}:
+ *   get:
+ *     summary: Get leaderboard settings for a specific organization
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: path, name: orgId, required: true, schema: { type: integer } }
+ *   put:
+ *     summary: Update leaderboard settings for a specific organization
+ *     tags: [Admin]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - { in: path, name: orgId, required: true, schema: { type: integer } }
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               leaderboardScope:
+ *                 type: string
+ *                 enum: [all_school, same_grade, same_class]
+ *               leaderboardLimit:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 500
+ *               hideZeroXpStudents:
+ *                 type: boolean
+ */
+router.get(
+  "/leaderboard-settings/:orgId",
+  authenticateToken,
+  checkAdmin,
+  adminController.getLeaderboardSettings,
+);
+router.put(
+  "/leaderboard-settings/:orgId",
+  authenticateToken,
+  checkAdmin,
+  adminController.updateLeaderboardSettings,
+);

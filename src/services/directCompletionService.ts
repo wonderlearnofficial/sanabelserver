@@ -20,8 +20,9 @@ export async function processDirectCompletionBatch({
   for (const studentId of [...new Set(studentIds)]) {
     try {
       const student = await Student.findOne({ where: { id: studentId } });
-      if (!student) { results.push({ studentId, status: "not_found", rewardsGranted: false }); continue; }
-      if (!(await authorize(student))) { results.push({ studentId, status: "unauthorized", rewardsGranted: false }); continue; }
+      // A missing id and someone else's student must look identical, or the
+      // response becomes an oracle for which student ids exist.
+      if (!student || !(await authorize(student))) { results.push({ studentId, status: "unauthorized", rewardsGranted: false }); continue; }
       const completion = await Student.sequelize.transaction((transaction: any) => completeMissionForStudent({
         studentId, taskId, missionDate, source, approverId: actorId, approverType: actorType,
         comment, transaction,

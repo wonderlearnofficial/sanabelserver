@@ -6,9 +6,16 @@
     "build": "tsc -p .",
     "migrate": "sequelize-cli --config database/config.js --migrations-path database/migrations db:migrate",
     "repair:local-arabic-catalog": "npm run build && node dist/scripts/repair-local-arabic-task-catalog.js",
+    "repair:local-arabic-challenges": "npm run build && node dist/scripts/repair-local-arabic-challenge-catalog.js",
     "seed:test-local": "ts-node src/scripts/seed-test-accounts.ts",
-    "seed:test-railway": "ts-node src/scripts/seed-test-accounts.ts --railway",
-    "test": "npm run build && node --test tests/*.test.js"
+    "test": "npm run build && node --test tests/*.test.js",
+    "load:smoke": "load-tests\\bin\\k6.exe run load-tests/smoke.js",
+    "load:student": "load-tests\\bin\\k6.exe run load-tests/group-b-student.js",
+    "load:admin": "load-tests\\bin\\k6.exe run load-tests/group-e-school-admin.js",
+    "load:mixed": "load-tests\\bin\\k6.exe run load-tests/mixed-traffic.js",
+    "load:stress": "load-tests\\bin\\k6.exe run -e TARGET_VUS=3000 -e DURATION=60s load-tests/mixed-traffic.js",
+    "load:5k": "load-tests\\bin\\k6.exe run -e TARGET_VUS=5000 -e DURATION=60s load-tests/mixed-traffic.js",
+    "db:bootstrap": "node scripts/bootstrap-empty-db.cjs --with-reference-data"
   },
   "devDependencies": {
     "@types/bcryptjs": "^2.4.6",

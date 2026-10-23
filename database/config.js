@@ -2,11 +2,15 @@
 // come from the environment; nothing sensitive is hardcoded.
 require("dotenv").config();
 
+const isLocalRailway =
+  process.platform === "win32" &&
+  process.env.MYSQL_DB_HOST?.endsWith(".railway.internal");
+
 const common = {
   username: process.env.MYSQL_DB_USER,
   password: process.env.MYSQL_DB_PASS,
-  host: process.env.MYSQL_DB_HOST || "localhost",
-  port: Number(process.env.MYSQL_DB_PORT) || 3306,
+  host: isLocalRailway ? "hayabusa.proxy.rlwy.net" : (process.env.MYSQL_DB_HOST || "localhost"),
+  port: isLocalRailway ? 28191 : (Number(process.env.MYSQL_DB_PORT) || 3306),
   dialect: "mysql",
 };
 

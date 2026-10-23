@@ -27,6 +27,9 @@ import StudentTodoSource from "../models/student-todo-source.model";
 import MissionApprovalRequestEvent from "../models/mission-approval-request-event.model";
 import Admin from "../models/admin.model";
 import AppConfig from "../models/app-config.model";
+import EmailEvent from "../models/email-event.model";
+import ImportRun from "../models/import-run.model";
+import AdminImpersonationHandoff from "../models/admin-impersonation-handoff.model";
 
 // Seeder data
 import seedAdmin from "../seeders/admin-seeder";
@@ -51,9 +54,9 @@ logger.debug(
 
 
 const dbPool = {
-  max: Number(process.env.DB_POOL_MAX) || 30,
-  min: Number(process.env.DB_POOL_MIN) || 5,
-  acquire: 30000,
+  max: Number(process.env.DB_POOL_MAX) || 80,
+  min: Number(process.env.DB_POOL_MIN) || 10,
+  acquire: Number(process.env.DB_POOL_ACQUIRE) || 60000,
   idle: 10000,
 };
 
@@ -112,6 +115,9 @@ const rundb = async () => {
     MissionApprovalRequestEvent,
     Admin,
     AppConfig,
+    EmailEvent,
+    ImportRun,
+    AdminImpersonationHandoff,
   };
   if (!modelsInitialized) {
     Object.values(models).forEach((model) => {

@@ -1,5 +1,7 @@
 import logger from "../config/logger";
 import fs from "fs";
+import { createHash } from "crypto";
+import EmailEvent, { EmailPurpose } from "../models/email-event.model";
 
 interface EmailAttachment {
   filename: string;
@@ -11,6 +13,8 @@ interface EmailAttachment {
 
 interface SendEmailParams {
   to: string;
+  purpose?: EmailPurpose;
+  userId?: number | null;
   subject: string;
   text: string;
   /** Optional rich HTML body. Falls back to `text` when omitted. */
@@ -18,6 +22,39 @@ interface SendEmailParams {
   /** Inline images (e.g. logos) referenced from `html` via cid:. */
   attachments?: EmailAttachment[];
 }
+
+type EmailProvider = "resend" | "smtp" | "configuration";
+
+const recipientHash = (recipient: string) =>
+  createHash("sha256").update(recipient.trim().toLowerCase()).digest("hex");
+
+const recordEmailEvent = async (params: {
+  to: string;
+  userId?: number | null;
+  purpose: EmailPurpose;
+  provider: EmailProvider;
+  providerMessageId?: string | null;
+  status: "send_accepted" | "send_failed";
+  failureCode?: string | null;
+  failureCategory?: string | null;
+}) => {
+  try {
+    await EmailEvent.create({
+      userId: params.userId ?? null,
+      recipientHash: recipientHash(params.to),
+      purpose: params.purpose,
+      provider: params.provider,
+      providerMessageId: params.providerMessageId ?? null,
+      status: params.status,
+      failureCode: params.failureCode ?? null,
+      failureCategory: params.failureCategory ?? null,
+    });
+  } catch (error) {
+    // Telemetry is deliberately non-blocking. Email delivery and account
+    // recovery must continue if the event table is unavailable.
+    logger.warn("Email telemetry write failed", { error });
+  }
+};
 
 export class EmailDeliveryError extends Error {
   constructor(
@@ -33,11 +70,23 @@ export class EmailDeliveryError extends Error {
 // Uses Resend's HTTP API (plain HTTPS, never blocked by PaaS egress rules) when
 // RESEND_API_KEY is set; otherwise falls back to SMTP via nodemailer, which is
 // what local dev uses today.
-export async function sendEmail({ to, subject, text, html, attachments }: SendEmailParams): Promise<void> {
+export async function sendEmail({
+  to,
+  purpose = "ACCOUNT_NOTIFICATION",
+  userId = null,
+  subject,
+  text,
+  html,
+  attachments,
+}: SendEmailParams): Promise<void> {
   const resendApiKey = process.env.RESEND_API_KEY;
 
   if (resendApiKey) {
     if (!process.env.EMAIL_USER) {
+      await recordEmailEvent({
+        to, userId, purpose, provider: "configuration", status: "send_failed",
+        failureCode: "EMAIL_SENDER_MISSING", failureCategory: "configuration",
+      });
       throw new EmailDeliveryError(
         "Email sender is not configured",
         "configuration",
@@ -81,17 +130,43 @@ export async function sendEmail({ to, subject, text, html, attachments }: SendEm
           provider: "resend",
           providerStatus: response.status,
         });
-        throw new EmailDeliveryError("Email provider rejected the request", "resend", 502);
+        const deliveryError = new EmailDeliveryError("Email provider rejected the request", "resend", 502);
+        await recordEmailEvent({
+          to, userId, purpose, provider: "resend", status: "send_failed",
+          failureCode: `HTTP_${response.status}`, failureCategory: "provider_rejected",
+        });
+        throw deliveryError;
       }
+      let providerMessageId: string | null = null;
+      try {
+        const body = await response.json() as { id?: unknown };
+        providerMessageId = typeof body.id === "string" ? body.id : null;
+      } catch {
+        // Acceptance is authoritative even when the provider response body is
+        // absent or malformed; the message id is optional telemetry.
+      }
+      await recordEmailEvent({
+        to, userId, purpose, provider: "resend", providerMessageId,
+        status: "send_accepted",
+      });
       return;
     } catch (error) {
       if (error instanceof EmailDeliveryError) throw error;
       logger.error("Email provider request failed", { provider: "resend", error });
+      await recordEmailEvent({
+        to, userId, purpose, provider: "resend", status: "send_failed",
+        failureCode: error instanceof Error ? error.name.slice(0, 80) : "UNKNOWN",
+        failureCategory: error instanceof Error && error.name === "AbortError" ? "timeout" : "provider_unavailable",
+      });
       throw new EmailDeliveryError("Email provider is unavailable", "resend");
     }
   }
 
   if (!process.env.MAIL_HOST || !process.env.MAIL_USERNAME || !process.env.MAIL_PASSWORD || !process.env.EMAIL_USER) {
+    await recordEmailEvent({
+      to, userId, purpose, provider: "configuration", status: "send_failed",
+      failureCode: "SMTP_CONFIGURATION_INCOMPLETE", failureCategory: "configuration",
+    });
     throw new EmailDeliveryError(
       "SMTP email service is not configured",
       "configuration",
@@ -114,7 +189,7 @@ export async function sendEmail({ to, subject, text, html, attachments }: SendEm
       },
     });
 
-    await transporter.sendMail({
+    const result = await transporter.sendMail({
       from: process.env.EMAIL_USER,
       to,
       subject,
@@ -124,8 +199,18 @@ export async function sendEmail({ to, subject, text, html, attachments }: SendEm
         ? { attachments: attachments.map((a) => ({ filename: a.filename, path: a.path, cid: a.cid })) }
         : {}),
     });
+    await recordEmailEvent({
+      to, userId, purpose, provider: "smtp",
+      providerMessageId: typeof result.messageId === "string" ? result.messageId : null,
+      status: "send_accepted",
+    });
   } catch (error) {
     logger.error("Email provider request failed", { provider: "smtp", error });
+    await recordEmailEvent({
+      to, userId, purpose, provider: "smtp", status: "send_failed",
+      failureCode: error instanceof Error ? error.name.slice(0, 80) : "UNKNOWN",
+      failureCategory: "provider_unavailable",
+    });
     throw new EmailDeliveryError("Email provider is unavailable", "smtp");
   }
 }

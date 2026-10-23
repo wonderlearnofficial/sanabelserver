@@ -9,8 +9,8 @@ import User from "../models/user.model";
 import Class from "../models/class.model";
 import Grade from "../models/grade.model";
 import Organization from "../models/oraganization.model";
-import { Op, fn, col, literal } from "sequelize";
-import { Sequelize, QueryTypes, where } from "sequelize";
+// v7 helpers to match the @sequelize/core v7 models (a v6 where()/fn() is rejected by them).
+import { Op, fn, col, literal, Sequelize, QueryTypes, where } from "@sequelize/core";
 import Task from "../models/task.model";
 import StudentTask from "../models/student-task.model";
 import Challenge from "../models/challenge.model";
@@ -24,10 +24,23 @@ import path from "path";
 import fs from "fs";
 import { sendEmail } from "../helpers/sendEmail";
 import { buildAccountCreatedEmail, getEmailAttachments, getAppUrl } from "../helpers/emailTemplates";
-import { generatePassword, generateSixDigitPassword } from "../helpers/generatePassword";
+import { generatePassword, generateSixDigitPassword, generateImportPassword } from "../helpers/generatePassword";
 import { getImportField } from "../helpers/importFieldLookup";
+import {
+  ImportFailure,
+  describeRowError,
+  importRowNumber,
+  isValidImportEmail,
+  normalizeImportEmail,
+  parseImportDate,
+  rowFailure,
+  runWithConcurrency,
+} from "../helpers/importRow";
+import { hashPasswordOffThread } from "../helpers/passwordHashPool";
 import { buildCategoryCounts } from "../helpers/taskCategoryStats";
 import { processDirectCompletionBatch } from "../services/directCompletionService";
+import { recordImportRun } from "../helpers/importRunRecorder";
+import { PROFILE_USER_ATTRIBUTES, accountCreatedAtIso } from "../helpers/accountIdentity";
 
 declare global {
   namespace Express {
@@ -171,9 +184,9 @@ const appearStudentByclass = async (req: Request, res: Response) => {
     if (!teacher) {
       return res.status(404).json({ message: "User or Teacher not found" });
     } else {
-      const classId = req.params.classId;
-      if (!classId) {
-        return res.status(400).json({ message: "Class ID is required" });
+      const classId = /^\d+$/.test(String(req.params.classId ?? "")) ? Number(req.params.classId) : NaN;
+      if (!Number.isSafeInteger(classId) || classId <= 0) {
+        return res.status(400).json({ message: "Class ID must be a positive integer" });
       }
 
       // Check authorization
@@ -464,178 +477,6 @@ const appearTaskesTypeandCategories = async (req: Request, res: Response) => {
   }
 };
 
-const legacyAddPros = async (req: Request, res: Response) => {
-  try {
-    // Extract user data
-    const user = (req as Request & { user: JwtPayload | undefined }).user;
-    if (!user) return res.status(404).json({ message: "User data not found in request" });
-
-    // Find teacher linked to user
-    const teacher = await Teacher.findOne({ where: { userId: user.id } });
-    if (!teacher) return res.status(404).json({ message: "Teacher data not found in request" });
-
-    // Extract request data
-    let { taskId, studentIds, comment = "", time } = req.body;
-    logger.info("teacher addPros request:", req.body);
-
-    // Validate taskId
-    if (typeof taskId !== "number") return res.status(400).json({ message: "Invalid taskId parameter" });
-
-    // Convert single studentId to an array if needed
-    studentIds = Array.isArray(studentIds) ? studentIds : [studentIds];
-
-    if (!studentIds.every((id: number) => typeof id === "number" && !isNaN(id))) {
-      return res.status(400).json({ message: "Invalid studentIds parameter" });
-    }
-
-    // Validate time format (ISO string or HH:mm)
-    let today: Date;
-    if (time && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(time)) {
-      today = new Date(time);
-    } else if (time && /^\d{1,2}:\d{2}(:\d{2})?$/.test(time)) {
-      today = new Date();
-      const [hours, minutes] = time.split(":").map(Number);
-      today.setHours(hours + 2, minutes, 0, 0);
-    } else {
-      return res.status(400).json({ message: "Invalid time format, expected HH:mm or ISO string" });
-    }
-    // Fetch students who already completed the task today
-    const existingRecords = await StudentTask.findAll({
-      where: {
-        studentId: { [Op.in]: studentIds },
-        taskId,
-        createdAt: {
-          [Op.gte]: new Date().setHours(0, 0, 0, 0),
-          [Op.lt]: new Date().setHours(23, 59, 59, 999),
-        },
-      },
-      include: [{ model: Student, as: "student" }],
-    });
-
-    const existingStudentIds = existingRecords.map((record) => record.studentId);
-    const newStudentIds = studentIds.filter((id: number) => !existingStudentIds.includes(id));
-
-    if (existingStudentIds.length > 0) {
-      return res.status(400).json({
-        message: "Some students have already completed this task today",
-        existingStudents: existingStudentIds,
-      });
-    }
-
-    // Fetch task details
-    const task = await Task.findOne({
-      where: { id: taskId },
-      include: [{ model: TaskCategory, as: "taskCategory" }],
-    });
-    if (!task) return res.status(404).json({ message: "Task not found" });
-    
-    // Fetch challenges related to the task
-    const challenges = await Challenge.findAll({
-      where: {
-        [Op.or]: [
-          { category: { [Op.in]: ["snabelBlue", "snabelRed", "snabelMixed", "snabelYellow", "xp", "alltask", "task","tasktype"] } },
-          { taskCategory: task.taskCategory?.title || "" },
-          { tasktype: task.type || "" },
-        ],
-      } as any,
-    });
-
-    // Fetch student challenges that are not completed
-    const studentChallenges = await StudentChallenge.findAll({
-      where: {
-        studentId: { [Op.in]: newStudentIds },
-        challengeId: challenges.map((c) => c.id),
-        completionStatus: "NotCompleted",
-      },
-      include: [{ model: Challenge, as: "challenge" }],
-    });
-
-    await Student.sequelize.transaction(async (t) => {
-      // Update students and their challenges in a single loop
-      for (const studentId of newStudentIds) {
-        // Create student task record
-        await StudentTask.create(
-          {
-            studentId,
-            taskId,
-            completionStatus: "Completed",
-            comment,
-            createdAt: today,
-            teacherId: teacher.id,
-            date: today.toISOString().split("T")[0],
-          },
-          { transaction: t }
-        );
-
-        // Fetch student record
-        const student = await Student.findOne({ where: { id: studentId } });
-        if (!student) continue;
-
-        // Update student's task rewards
-        student.xp = (student.xp || 0) + (task.xp || 0);
-        student.snabelRed = (student.snabelRed || 0) + (task.snabelRed || 0);
-        student.snabelBlue = (student.snabelBlue || 0) + (task.snabelBlue || 0);
-        student.snabelYellow = (student.snabelYellow || 0) + (task.snabelYellow || 0);
-        await student.save({ transaction: t });
-
-        // Update student's challenge progress
-        for (const studentChallenge of studentChallenges) {
-          if (studentChallenge.studentId !== studentId) continue;
-          const challenge = studentChallenge.challenge;
-
-          // Add points based on challenge category
-          if (challenge.category === "xp") studentChallenge.pointOfStudent += (task.xp || 0);
-          else if (challenge.category === "snabelBlue") studentChallenge.pointOfStudent += (task.snabelBlue || 0);
-          else if (challenge.category === "snabelRed") studentChallenge.pointOfStudent += (task.snabelRed || 0);
-          else if (challenge.category === "snabelYellow") studentChallenge.pointOfStudent += (task.snabelYellow || 0);
-          else if (challenge.category === "snabelMixed") {
-            studentChallenge.pointOfStudent += (task.snabelBlue || 0) + (task.snabelRed || 0) + (task.snabelYellow || 0);
-          } else if (challenge.category === "alltask") {
-            studentChallenge.pointOfStudent += 1;
-          } else if (challenge.taskCategory === task.taskCategory?.title) {
-            studentChallenge.pointOfStudent += 1;
-          } else if (challenge.tasktype === task.type) {
-            studentChallenge.pointOfStudent += 1;
-          }
-
-          // Mark challenge as completed if threshold is met. A null point
-          // threshold means "not configured" and must never auto-complete —
-          // `pointOfStudent >= null` coerces to `>= 0`, which is always true.
-          if (challenge.point != null && studentChallenge.pointOfStudent >= challenge.point) {
-            studentChallenge.completionStatus = CompletionStatus.Completed;
-
-            student.xp = (student.xp || 0) + (challenge.xp || 0);
-            student.snabelRed = (student.snabelRed || 0) + (challenge.snabelRed || 0);
-            student.snabelBlue = (student.snabelBlue || 0) + (challenge.snabelBlue || 0);
-            student.snabelYellow = (student.snabelYellow || 0) + (challenge.snabelYellow || 0);
-            student.water = (student.water || 0) + (challenge.water || 0);
-            student.seeders = (student.seeders || 0) + (challenge.seeder || 0);
-            await student.save({ transaction: t });
-          }
-          await studentChallenge.save({ transaction: t });
-        }
-      }
-    });
-
-    logger.info("Task recorded successfully for students by teacher:", { studentIds: newStudentIds, teacherId: teacher.id });
-    return res.status(201).json({
-      message: "Student tasks recorded successfully",
-    });
-  } catch (error: any) {
-    // See the matching comment in studentController.addPros: the pre-check
-    // above has a race window, and here the unique index DOES apply (teacherId
-    // is non-null), so two near-simultaneous submissions can genuinely hit it.
-    if (error?.name === "SequelizeUniqueConstraintError") {
-      return res.status(409).json({ message: "Some students have already completed this task today" });
-    }
-    logger.error("Error in addPros (teacher):", { error });
-    // Must include `message` — the client displays this text directly, and
-    // an error-only body renders as a blank alert (the reported production bug).
-    return res.status(500).json({ message: "Internal Server Error", error: "Internal Server Error" });
-  }
-};
-
-
 const appearStudentInDetails = async (req: Request, res: Response) => {
   try {
     // Extract user data
@@ -646,10 +487,30 @@ const appearStudentInDetails = async (req: Request, res: Response) => {
     const teacher = await Teacher.findOne({ where: { userId: user.id } });
     if (!teacher) return res.status(404).json({ message: "Teacher data not found in request" });
     
+    // A teacher without an organization has no students; never let a null
+    // organizationId match unaffiliated (Solo User) profiles.
+    if (!teacher.organizationId) {
+      return res.status(403).json({ message: "Teacher is not assigned to an organization" });
+    }
+
     const studentId = Number(req.params.studentId);
     if (!studentId) return res.status(400).json({ message: "Student ID is required" });
+
+    // Same rule as addPros/appearStudentByclass: the student must be in a
+    // class this teacher teaches (Classes.teacherId) in the teacher's org.
+    const teacherClasses = await Class.findAll({
+      where: { teacherId: teacher.id, organizationId: teacher.organizationId },
+      attributes: ["id"],
+    });
+    const teacherClassIds = teacherClasses.map((cls: any) => cls.id);
+    if (teacherClassIds.length === 0) return res.status(404).json({ message: "Student not found" });
+
     const student = await Student.findOne({
-      where: { id: studentId,organizationId:teacher.organizationId },
+      where: {
+        id: studentId,
+        organizationId: teacher.organizationId,
+        classId: { [Op.in]: teacherClassIds },
+      },
     
       include: [{
         model: User,
@@ -773,19 +634,30 @@ const teacherData = async (req: Request, res: Response) => {
   try {
     const teacher = await Teacher.findOne({
       where: { userId: user.id },
-      include: [{
-        model: User,
-        as: "user", // use the alias defined in the association
-      },
-      
-    ]
-     
+      include: [
+        {
+          model: User,
+          as: "user", // use the alias defined in the association
+          // Explicit allowlist. Including the whole User row returned the
+          // password hash, the OTP fields, tokenVersion, the push subscription
+          // and the stored location to the client. The allowlist is exactly
+          // what `StudentUserProvider` reads for a Teacher, plus createdAt for
+          // the account-age field below.
+          attributes: [...PROFILE_USER_ATTRIBUTES],
+        },
+      ],
     });
     if (!teacher) {
       return res.status(404).json({ message: "User or Student not found" });
     } else {
-
-      res.status(200).json({ data: teacher });
+      // Same field, same format, same provenance as the Student profile:
+      // `Users.createdAt`, ISO, or null. Tutorial V2 eligibility parses it.
+      res.status(200).json({
+        data: {
+          ...teacher.toJSON(),
+          accountCreatedAt: accountCreatedAtIso((teacher as any).user?.createdAt),
+        },
+      });
     }
   } catch (error) {
     logger.error("Error fetching teacher data:", { error });
@@ -852,73 +724,93 @@ const addTeacher = async (req: Request, res: Response) => {
 
   const processedData = req.processedData;
   const successfulEntries: any[] = [];
-  const failedEntries: any[] = [];
-  const organizationFiles: Record<string, { workbook: ExcelJS.Workbook; worksheet: ExcelJS.Worksheet }> = {};
+  const failedEntries: ImportFailure[] = [];
   const adminScope = (
     req as Request & { adminOrganizationId?: number | null }
   ).adminOrganizationId ?? null;
+  const fail = (rowNumber: number, email: string, code: string, message: string, column?: string) =>
+    failedEntries.push(rowFailure(rowNumber, code, message, column, email));
+
+  const orgCache = new Map<string, Promise<Organization | null>>();
+  const findOrganization = (key: string, load: () => Promise<Organization | null>) => {
+    if (!orgCache.has(key)) orgCache.set(key, load());
+    return orgCache.get(key)!;
+  };
+  const firstRowOfEmail = new Map<string, number>();
+  const targetOrganizationIds = new Set<number>();
+  const pendingEmails: Array<{ entry: any; firstName: string; email: string; password: string; userId: number }> = [];
 
   try {
     for (const sheet in processedData) {
-      const all_data = processedData[sheet];
+      const all_data: any[] = Array.isArray(processedData[sheet]) ? processedData[sheet] : [];
 
-      for (const data of all_data) {
+      for (let rowIndex = 0; rowIndex < all_data.length; rowIndex += 1) {
+        const data = all_data[rowIndex];
+        const rowNumber = importRowNumber(data, rowIndex);
+        let email = "";
         try {
-          const firstName = getImportField(data, "FirstName", "firstName", "first_name")?.toString().trim();
-          const lastName = getImportField(data, "LastName", "lastName", "last_name")?.toString().trim();
-          const email = getImportField(data, "Email", "email")?.toString().trim();
-          const gender = getImportField(data, "Gender", "gender")?.toString().trim();
-          const orgInput = getImportField(data, "OrganizationName", "organizationName", "school", "School");
-          const dateOfBirth = getImportField(data, "DateOfBirth", "dateOfBirth") || null;
+          const firstName = String(getImportField(data, "firstName") ?? "").trim();
+          const lastName = String(getImportField(data, "lastName") ?? "").trim();
+          email = normalizeImportEmail(getImportField(data, "email"));
+          const gender = getImportField(data, "gender")?.toString().trim() || null;
+          const orgName = String(getImportField(data, "school") ?? "").trim().toLowerCase();
 
-          if (!firstName || !lastName || !email || !orgInput) {
-            failedEntries.push({ row: data, error: "Missing required fields" });
+          if (!firstName) {
+            fail(rowNumber, email, "REQUIRED_FIELD_MISSING", "firstName is required", "firstName");
+            continue;
+          }
+          if (!lastName) {
+            fail(rowNumber, email, "REQUIRED_FIELD_MISSING", "lastName is required", "lastName");
+            continue;
+          }
+          if (!email) {
+            fail(rowNumber, email, "REQUIRED_FIELD_MISSING", "email is required", "email");
+            continue;
+          }
+          if (!isValidImportEmail(email)) {
+            fail(rowNumber, email, "INVALID_EMAIL", "email format is invalid", "email");
+            continue;
+          }
+          if (!orgName) {
+            fail(rowNumber, email, "ORGANIZATION_REQUIRED", "school is required", "school");
+            continue;
+          }
+          const earlierRow = firstRowOfEmail.get(email);
+          if (earlierRow !== undefined) {
+            fail(rowNumber, email, "DUPLICATE_EMAIL_IN_FILE", `email repeats row ${earlierRow} of this file`, "email");
+            continue;
+          }
+          firstRowOfEmail.set(email, rowNumber);
+
+          const dateOfBirth = parseImportDate(getImportField(data, "DateOfBirth"));
+          if (dateOfBirth === null) {
+            fail(rowNumber, email, "INVALID_DATE", "DateOfBirth is not a valid date (use YYYY-MM-DD)", "DateOfBirth");
             continue;
           }
 
-          const orgName = String(orgInput).trim().toLowerCase();
           const organization = adminScope !== null
-            ? await Organization.findByPk(adminScope)
-            : await Organization.findOne({ where: { name: orgName } });
+            ? await findOrganization(`id:${adminScope}`, () => Organization.findByPk(adminScope))
+            : await findOrganization(`name:${orgName}`, () => Organization.findOne({ where: { name: orgName } }));
           if (!organization) {
-            failedEntries.push({
-              email,
-              code: "ORGANIZATION_NOT_FOUND",
-              message: "Organization does not exist; create it before importing teachers",
-            });
+            fail(rowNumber, email, "ORGANIZATION_NOT_FOUND", "school not found; create it before importing", "school");
             continue;
           }
           if (
             adminScope !== null &&
             organization.name.trim().toLowerCase() !== orgName
           ) {
-            failedEntries.push({
-              email,
-              code: "FORBIDDEN_ORGANIZATION",
-              message: "School admins cannot import teachers into another organization",
-            });
+            fail(rowNumber, email, "FORBIDDEN_ORGANIZATION", "school admins can import only into their own school", "school");
+            continue;
+          }
+          targetOrganizationIds.add(organization.id);
+
+          if (await User.findOne({ where: { email }, attributes: ["id"] })) {
+            fail(rowNumber, email, "EMAIL_CONFLICT", "email is already in use", "email");
             continue;
           }
 
-          if (!organizationFiles[organization.name]) {
-            const workbook = new ExcelJS.Workbook();
-            const worksheet = workbook.addWorksheet("Teachers");
-            worksheet.columns = [
-              { header: "Email", key: "email", width: 30 },
-              { header: "Password", key: "password", width: 20 },
-            ];
-            organizationFiles[organization.name] = { workbook, worksheet };
-          }
-
-          const { worksheet } = organizationFiles[organization.name];
-
-          if (await User.findOne({ where: { email } })) {
-            failedEntries.push({ row: data, error: "Email is already in use" });
-            continue;
-          }
-
-          const password = generateSixDigitPassword();
-          const hashedPassword = bcrypt.hashSync(password, 10);
+          const password = generateImportPassword();
+          const hashedPassword = await hashPasswordOffThread(password, 10);
 
           // User + Teacher must be created together — otherwise a failure
           // in Teacher.create after User.create already committed leaves an
@@ -933,7 +825,7 @@ const addTeacher = async (req: Request, res: Response) => {
                 email,
                 role: "Teacher",
                 password: hashedPassword,
-                dateOfBirth,
+                dateOfBirth: (dateOfBirth ?? null) as any,
                 gender,
                 isAccess: true,
                 otpVerified: true,
@@ -950,73 +842,71 @@ const addTeacher = async (req: Request, res: Response) => {
             );
           });
 
-          worksheet.addRow({ email, password });
-
-          if (data["Assigned Classes"]) {
-            console.warn(
-              `Note: 'Assigned Classes' provided for ${firstName} ${lastName}, but no class assignment logic exists.`
-            );
-          }
-
-          // Best-effort email — a delivery failure shouldn't undo (or mark
-          // failed) an account that was already created, since the password
-          // is a known default rather than something only the email reveals.
-          let emailSent = false;
-          try {
-            await sendEmail({
-              to: email,
-              subject: "Your Teacher Account in Snabel elahssan",
-              text: `Hello ${firstName},\n\nYour teacher account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nLog in at ${getAppUrl()}\n\nPlease change your password immediately.`,
-              html: buildAccountCreatedEmail({
-                firstName,
-                email,
-                password,
-                roleLabel: "teacher",
-              }),
-              attachments: getEmailAttachments(),
-            });
-            emailSent = true;
-          } catch (emailError) {
-            logger.error("Failed to send onboarding email (non-blocking):", { emailError, email });
-          }
-
-          successfulEntries.push({ row: data, message: "Teacher added successfully", teacherId: new_teacher.id, emailSent });
+          const entry = {
+            rowNumber,
+            email,
+            message: "Teacher added successfully",
+            teacherId: new_teacher.id,
+            emailSent: false,
+          };
+          successfulEntries.push(entry);
+          pendingEmails.push({ entry, firstName, email, password, userId: user.id });
         } catch (error) {
-          failedEntries.push({
-            row: data,
-            error: error instanceof Error ? error.message : String(error),
-          });
+          failedEntries.push(describeRowError(rowNumber, error, email));
+          logger.error("Teacher import row failed", { error, sheet, rowNumber });
         }
       }
     }
 
-    // Save Excel Files for each organization
-    const outputDir = path.resolve(__dirname, "../../output_teacher");
-    if (!fs.existsSync(outputDir)) fs.mkdirSync(outputDir, { recursive: true });
+    // Credentials are delivered only by email: no plaintext workbook is
+    // written to disk and no server path is returned. `emailSent` per row lets
+    // the UI flag accounts whose email failed.
+    await runWithConcurrency(pendingEmails, 5, async ({ entry, firstName, email, password, userId }) => {
+      try {
+        await sendEmail({
+          to: email,
+          userId,
+          purpose: "ADMIN_INVITE",
+          subject: "Your Teacher Account in Snabel elahssan",
+          text: `Hello ${firstName},\n\nYour teacher account has been created.\n\nEmail: ${email}\nPassword: ${password}\n\nLog in at ${getAppUrl()}\n\nPlease change your password immediately.`,
+          html: buildAccountCreatedEmail({
+            firstName,
+            email,
+            password,
+            roleLabel: "teacher",
+          }),
+          attachments: getEmailAttachments(),
+        });
+        entry.emailSent = true;
+      } catch (emailError) {
+        logger.error("Failed to send onboarding email (non-blocking):", { emailError, teacherId: entry.teacherId });
+      }
+    });
 
-    const savedFiles: string[] = [];
-    for (const orgName in organizationFiles) {
-      const { workbook } = organizationFiles[orgName];
-      const safeName = orgName.replace(/[\/\\?%*:|"<>]/g, "_");
-      const filePath = path.resolve(outputDir, `${safeName}_Teachers.xlsx`);
-      await workbook.xlsx.writeFile(filePath);
-      savedFiles.push(filePath);
-    }
+    // Import telemetry. Recorded after the rows are written and deliberately
+    // non-fatal: see `helpers/importRunRecorder` for why one row is one
+    // submitted batch rather than one uploaded file.
+    await recordImportRun(req, {
+      entityType: "teachers",
+      succeeded: successfulEntries.length,
+      failed: failedEntries.length,
+      targetOrganizationId:
+        targetOrganizationIds.size === 1 ? [...targetOrganizationIds][0] : null,
+    });
 
     res.json({
       message: "Teacher import completed",
+      total: successfulEntries.length + failedEntries.length,
       successCount: successfulEntries.length,
       failureCount: failedEntries.length,
       successfulEntries,
       failedEntries,
-      files: savedFiles,
     });
   } catch (error) {
     logger.error("Error in addTeacher:", { error });
     res.status(500).json({
       success: false,
       message: "Internal server error during teacher creation",
-      error: error instanceof Error ? error.message : JSON.stringify(error),
     });
   }
 };
@@ -1083,6 +973,9 @@ const getClassesByGrade = async (req: Request, res: Response) => {
 
     if ((!grade || typeof grade !== "string") && (!gradeId || typeof gradeId !== "string")) {
       return res.status(400).json({ message: "Missing or invalid 'grade' or 'gradeId' in URL parameters" });
+    }
+    if (gradeId && !/^\d+$/.test(String(gradeId))) {
+      return res.status(400).json({ message: "gradeId must be a positive integer" });
     }
 
     const teacher = await Teacher.findOne({ where: { userId: user.id } });

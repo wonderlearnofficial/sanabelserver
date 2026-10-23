@@ -1,3 +1,5 @@
+import { randomInt } from "crypto";
+
 function generatePassword(length = 12) {
   // Define character pools
   const lowercase = "abcdefghijklmnopqrstuvwxyz";
@@ -34,7 +36,27 @@ function generatePassword(length = 12) {
 // one must still be random and distinct, or every imported user shares one
 // known password and can log into anyone else's account.
 function generateSixDigitPassword(): string {
-  return String(Math.floor(100000 + Math.random() * 900000));
+  return String(randomInt(100000, 1000000));
 }
 
-export { generatePassword, generateSixDigitPassword };
+// Bulk-import credentials (students, teachers, parents). Cryptographically
+// random, 10 characters from an alphabet without look-alikes (no 0/o, 1/l/i),
+// always mixing letters and digits so it is easy to read out and type on a
+// phone yet far harder to guess than a 6-digit number.
+const IMPORT_LETTERS = "abcdefghjkmnpqrstuvwxyz";
+const IMPORT_DIGITS = "23456789";
+function generateImportPassword(length = 10): string {
+  const all = IMPORT_LETTERS + IMPORT_DIGITS;
+  const chars = [
+    IMPORT_LETTERS[randomInt(IMPORT_LETTERS.length)],
+    IMPORT_DIGITS[randomInt(IMPORT_DIGITS.length)],
+  ];
+  while (chars.length < Math.max(10, length)) chars.push(all[randomInt(all.length)]);
+  for (let i = chars.length - 1; i > 0; i -= 1) {
+    const j = randomInt(i + 1);
+    [chars[i], chars[j]] = [chars[j], chars[i]];
+  }
+  return chars.join("");
+}
+
+export { generatePassword, generateSixDigitPassword, generateImportPassword };
