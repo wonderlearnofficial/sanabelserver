@@ -4,6 +4,7 @@ import * as adminController from "../controllers/adminController";
 import * as analyticsController from "../controllers/analyticsController";
 import * as operationalAnalyticsController from "../controllers/operationalAnalyticsController";
 import * as appConfigController from "../controllers/appConfigController";
+import * as adminControlController from "../controllers/adminControlController";
 import upload from "../middleware/uploadExcel";
 import { processStudentMiddleware } from "../middleware/processExcelfile";
 
@@ -236,6 +237,32 @@ router.get(
   adminController.getDataQualityDetail,
 );
 
+// ---------------------------------------------------------------------------
+// Super Admin platform control: sessions, account access, activity log and
+// per-school data health. See controllers/adminControlController.ts.
+// ---------------------------------------------------------------------------
+
+/** Per-school problem counts, worst school first. */
+router.get("/data-quality/schools", ...superAdminOnly, adminControlController.dataQualityBySchool);
+
+/** Every account with its sign-in state, most recently active first. */
+router.get("/sessions", ...superAdminOnly, adminControlController.listSessions);
+/** Ends every session on the platform except the caller's. Body: { confirm: true }. */
+router.post("/sessions/sign-out-all", ...superAdminOnly, adminControlController.signOutEveryone);
+/** Ends every session of one account. */
+router.post("/users/:userId/sign-out", ...superAdminOnly, adminControlController.signOutUser);
+/** Disables or re-enables an account. Body: { enabled: boolean }. */
+router.patch("/users/:userId/access", ...superAdminOnly, adminControlController.setUserAccess);
+/** Ends every session of one school's students, teachers and school admins. */
+router.post(
+  "/organizations/:organizationId/sign-out",
+  ...superAdminOnly,
+  adminControlController.signOutOrganization,
+);
+
+/** Who did what, to whom, in which school, and when. Newest first. */
+router.get("/audit-log", ...superAdminOnly, adminControlController.listAuditLog);
+
 /**
  * @swagger
  * /admin/me:
@@ -415,7 +442,8 @@ router.get("/teachers", authenticateToken, checkAdmin, adminController.listTeach
  *     security:
  *       - bearerAuth: []
  */
-router.get("/parents", authenticateToken, checkAdmin, adminController.listParents);
+// Super Admin only: parents create their own accounts and are not school members.
+router.get("/parents", ...superAdminOnly, adminController.listParents);
 
 /**
  * @swagger

@@ -51,6 +51,16 @@ const SUPER_ADMIN_ONLY = [
   ["post", "/organizations"],
   ["patch", "/organizations/:organizationId"],
   ["delete", "/organizations/:organizationId"],
+  // Parents sign up themselves and are not school members.
+  ["get", "/parents"],
+  // Platform control: sessions, account access, activity log, data health.
+  ["get", "/data-quality/schools"],
+  ["get", "/sessions"],
+  ["post", "/sessions/sign-out-all"],
+  ["post", "/users/:userId/sign-out"],
+  ["patch", "/users/:userId/access"],
+  ["post", "/organizations/:organizationId/sign-out"],
+  ["get", "/audit-log"],
 ];
 
 /**
@@ -71,7 +81,6 @@ const SCHOOL_SCOPED = [
   ["patch", "/students/:studentId"],
   ["delete", "/students/:studentId"],
   ["get", "/teachers"],
-  ["get", "/parents"],
   ["get", "/users"],
   ["post", "/users"],
   ["patch", "/users/:userId"],

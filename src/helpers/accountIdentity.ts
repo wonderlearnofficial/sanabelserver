@@ -40,6 +40,11 @@ export const PROFILE_FORBIDDEN_USER_ATTRIBUTES = [
   "tokenVersion",
   "pushSubscription",
   "location",
+  // Admin-console sign-in tracking.
+  "lastLoginAt",
+  "lastActiveAt",
+  "lastLoginUserAgent",
+  "disabledAt",
 ] as const;
 
 export const accountCreatedAtIso = (value: unknown): string | null => {

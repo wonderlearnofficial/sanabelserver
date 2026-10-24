@@ -1,6 +1,7 @@
 import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import logger from "../config/logger";
+import { recordActivity } from "../helpers/sessionActivity";
 import User from "../models/user.model";
 
 const authenticateToken = async (
@@ -38,7 +39,7 @@ const authenticateToken = async (
     // A correctly signed token is not enough: the account may have been
     // deleted by an administrator while the user still has the app open.
     const account = await User.findByPk(user.id, {
-      attributes: ["id", "email", "role", "tokenVersion", "isAccess", "organizationId"],
+      attributes: ["id", "email", "role", "tokenVersion", "isAccess", "organizationId", "lastActiveAt"],
     });
     if (!account) {
       return res.status(401).json({
@@ -88,6 +89,8 @@ const authenticateToken = async (
       organizationId: account.organizationId ?? null,
     };
     (req as Request & { userAccount?: any }).userAccount = account;
+    // An admin acting as this user (impersonation) is not this user's activity.
+    if (user.imp !== true) recordActivity(account.id, account.lastActiveAt);
     next();
   } catch (error) {
     if (error instanceof Error) {

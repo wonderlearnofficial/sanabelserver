@@ -2,6 +2,7 @@ import { Request } from "express";
 import { JwtPayload } from "jsonwebtoken";
 import logger from "../config/logger";
 import ImportRun, { ImportEntityType } from "../models/import-run.model";
+import { recordAdminAction } from "./adminAudit";
 
 /**
  * Records the metadata of one bulk-import submission.
@@ -60,13 +61,23 @@ export const recordImportRun = async (
     const succeeded = Math.max(0, Math.trunc(params.succeeded) || 0);
     const failed = Math.max(0, Math.trunc(params.failed) || 0);
 
-    await ImportRun.create({
+    const run = await ImportRun.create({
       adminUserId: actingUser.id,
       organizationId: scope ?? params.targetOrganizationId ?? null,
       entityType: params.entityType,
       totalRows: succeeded + failed,
       succeeded,
       failed,
+    });
+    // Every import endpoint comes through here, so this is also where each
+    // batch reaches the admin activity log.
+    await recordAdminAction(req, {
+      action: "import.batch",
+      targetType: "import",
+      targetId: run.id,
+      targetLabel: params.entityType,
+      organizationId: scope ?? params.targetOrganizationId ?? null,
+      details: { entityType: params.entityType, succeeded, failed },
     });
   } catch (error) {
     logger.warn("Failed to record import run telemetry (non-fatal)", { error });

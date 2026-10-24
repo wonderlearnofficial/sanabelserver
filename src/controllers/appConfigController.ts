@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import AppConfig from "../models/app-config.model";
 import logger from "../config/logger";
+import { recordAdminAction } from "../helpers/adminAudit";
 
 /**
  * Public endpoint: Get app version info & update requirements for a given platform.
@@ -149,6 +150,21 @@ export const updateAdminAppConfig = async (req: Request, res: Response): Promise
     const updatedConfigs = await AppConfig.findAll({
       order: [["platform", "ASC"]],
     });
+
+    const changed = (Array.isArray(payload) ? payload : [payload]).filter((item) => item?.platform);
+    for (const item of changed) {
+      await recordAdminAction(req, {
+        action: "app_version.update",
+        targetType: "platform",
+        targetLabel: String(item.platform).toLowerCase(),
+        details: {
+          latestVersion: item.latestVersion ?? null,
+          minRequiredVersion: item.minRequiredVersion ?? null,
+          forceUpdate: Boolean(item.forceUpdate),
+          maintenanceMode: Boolean(item.maintenanceMode),
+        },
+      });
+    }
 
     res.status(200).json({
       success: true,

@@ -39,6 +39,7 @@ import crypto from "crypto";
 import AdminImpersonationHandoff from "../models/admin-impersonation-handoff.model";
 import ImportRun from "../models/import-run.model";
 import { IMPORT_RUN_GRANULARITY_NOTE, recordImportRun } from "../helpers/importRunRecorder";
+import { recordAdminAction, userLabel } from "../helpers/adminAudit";
 
 const DEFAULT_RESET_PASSWORD = "changeme123";
 
@@ -131,6 +132,8 @@ const getAdminScope = (req: Request): number | null =>
 
 // Whether a target user belongs to the acting admin's school. Admin users
 // are never in a school scope — scoped admins cannot see or manage them.
+// Neither are parents: a parent signs up and links their own children, so
+// parent accounts are managed by the Super Admin only.
 const isUserInAdminScope = async (
   userRecord: User,
   scope: number,
@@ -146,20 +149,6 @@ const isUserInAdminScope = async (
   if (userRecord.role === "Teacher") {
     const count = await Teacher.count({
       where: { userId: userRecord.id, organizationId: scope },
-      transaction,
-    });
-    return count > 0;
-  }
-  if (userRecord.role === "Parent") {
-    const parent = await Parent.findOne({
-      where: { userId: userRecord.id },
-      transaction,
-    });
-    if (!parent) return false;
-    // Imported into this school (no child linked yet) — see listParents.
-    if (parent.organizationId === scope) return true;
-    const count = await Student.count({
-      where: { ParentId: parent.id, organizationId: scope } as any,
       transaction,
     });
     return count > 0;
@@ -210,25 +199,20 @@ const getAdminStats = async (req: Request, res: Response) => {
     const scope = getAdminScope(req);
 
     if (scope !== null) {
-      // School admin: everything counted within their organization only
-      const [students, teachers, classes, parentLinks] = await Promise.all([
+      // School admin: everything counted within their organization only.
+      // Parents are not school members (they manage their own accounts), so
+      // they are neither counted nor reported here.
+      const [students, teachers, classes] = await Promise.all([
         Student.count({ where: { organizationId: scope } }),
         Teacher.count({ where: { organizationId: scope } }),
         Class.count({ where: { organizationId: scope } }),
-        Student.findAll({
-          where: { organizationId: scope, ParentId: { [Op.ne]: null } } as any,
-          attributes: ["ParentId"],
-          raw: true,
-        }),
       ]);
-      const parents = new Set(parentLinks.map((r: any) => r.ParentId)).size;
 
       return res.status(200).json({
         data: {
-          users: students + teachers + parents,
+          users: students + teachers,
           students,
           teachers,
-          parents,
           organizations: 1,
           classes,
         },
@@ -365,6 +349,14 @@ const createOrganization = async (req: Request, res: Response) => {
       img,
     });
 
+    await recordAdminAction(req, {
+      action: "organization.create",
+      targetType: "organization",
+      targetId: organization.id,
+      targetLabel: organization.name,
+      organizationId: organization.id,
+    });
+
     return res.status(201).json({ data: organization });
   } catch (error) {
     logger.error("Error in createOrganization:", { error });
@@ -398,7 +390,16 @@ const updateOrganization = async (req: Request, res: Response) => {
     if (img !== undefined) updateData.img = img;
 
     if (Object.keys(updateData).length > 0) {
+      const previousName = organization.name;
       await organization.update(updateData);
+      await recordAdminAction(req, {
+        action: "organization.update",
+        targetType: "organization",
+        targetId: organization.id,
+        targetLabel: organization.name,
+        organizationId: organization.id,
+        details: { fields: Object.keys(updateData), previousName },
+      });
     }
 
     return res.status(200).json({ data: organization });
@@ -442,6 +443,13 @@ const deleteOrganization = async (req: Request, res: Response) => {
     }
 
     await organization.destroy();
+    await recordAdminAction(req, {
+      action: "organization.delete",
+      targetType: "organization",
+      targetId: organizationId,
+      targetLabel: organization.name,
+      organizationId,
+    });
 
     return res.status(200).json({ message: "Organization deleted successfully" });
   } catch (error) {
@@ -462,6 +470,7 @@ const listStudents = async (req: Request, res: Response) => {
       classId,
       gradeId,
       grade,
+      missing,
       page = "1",
       limit = "20",
     } = req.query;
@@ -474,6 +483,12 @@ const listStudents = async (req: Request, res: Response) => {
     if (classIdFilter) where.classId = classIdFilter;
     if (gradeIdFilter) where.gradeId = gradeIdFilter;
     else if (grade) where.grade = String(grade);
+    // The data-quality drill-down: only students missing a class or a grade.
+    if (missing !== undefined && missing !== "") {
+      if (missing === "class") where.classId = null;
+      else if (missing === "grade") where.gradeId = null;
+      else throw new InvalidQueryParamError("missing", "missing must be class or grade");
+    }
 
     // School admins are locked to their own school regardless of query params
     const scope = getAdminScope(req);
@@ -530,6 +545,26 @@ const listStudents = async (req: Request, res: Response) => {
           attributes: ["id", "name"],
           required: false,
         },
+        // The linked parent, for a Super Admin only: parents are not part of
+        // a school, so a School Admin never sees them.
+        ...(scope === null
+          ? [
+              {
+                model: Parent,
+                as: "Parent",
+                attributes: ["id"],
+                required: false,
+                include: [
+                  {
+                    model: User,
+                    as: "user",
+                    attributes: ["id", "firstName", "lastName", "email"],
+                    required: false,
+                  },
+                ],
+              },
+            ]
+          : []),
       ],
     });
 
@@ -659,12 +694,18 @@ const updateStudent = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "Invalid student id" });
     }
 
-    const { firstName, lastName, email, gradeId, grade, organizationId, classId, profileImg } = req.body;
+    const { firstName, lastName, email, gradeId, grade, organizationId, classId, profileImg, parentId } =
+      req.body;
     const requestedOrganizationId = parseOptionalPositiveId(organizationId, "organizationId");
     const requestedClassId = parseOptionalPositiveId(classId, "classId");
     const requestedGradeId = parseOptionalPositiveId(gradeId, "gradeId");
+    // null unlinks the parent; a number links that parent.
+    const requestedParentId = parseOptionalPositiveId(parentId, "parentId");
 
-    return await User.sequelize!.transaction(async (transaction) => {
+    // Written to the activity log once the transaction has committed.
+    const auditEntries: Parameters<typeof recordAdminAction>[1][] = [];
+
+    const response = await User.sequelize!.transaction(async (transaction) => {
       const student = await Student.findByPk(studentId, { transaction });
       if (!student) {
         return res.status(404).json({ message: "Student not found" });
@@ -675,6 +716,10 @@ const updateStudent = async (req: Request, res: Response) => {
         if (student.organizationId !== scope) {
           return res.status(404).json({ message: "Student not found" });
         }
+        // Parents link their own children; only a Super Admin may override that.
+        if (requestedParentId !== undefined) {
+          return res.status(403).json({ message: "School admins cannot link parents" });
+        }
         // A school admin can never move a student out of their school
         if (requestedOrganizationId !== undefined && requestedOrganizationId !== scope) {
           return res.status(403).json({
@@ -683,9 +728,22 @@ const updateStudent = async (req: Request, res: Response) => {
         }
       }
 
+      // Checked before anything is written, so a bad id changes nothing.
+      let parentRecord: Parent | null = null;
+      if (requestedParentId != null) {
+        parentRecord = await Parent.findByPk(requestedParentId, {
+          transaction,
+          include: [{ model: User, as: "user", attributes: ["firstName", "lastName", "email"] }],
+        });
+        if (!parentRecord) {
+          return res.status(400).json({ message: "Parent does not exist", field: "parentId" });
+        }
+      }
+
       const userRecord = student.userId
         ? await User.findOne({ where: { id: student.userId }, transaction })
         : null;
+      const studentLabel = userLabel(userRecord);
 
       const userUpdateData: Record<string, any> = {};
       if (firstName) userUpdateData.firstName = firstName;
@@ -749,8 +807,57 @@ const updateStudent = async (req: Request, res: Response) => {
         });
       }
 
+      const changedFields = [
+        ...Object.keys(userUpdateData),
+        ...(resolvedRelationships ? ["organizationId", "classId", "gradeId"] : Object.keys(studentUpdateData)),
+      ];
+      if (changedFields.length > 0) {
+        auditEntries.push({
+          action: "student.update",
+          targetType: "student",
+          targetId: student.id,
+          targetLabel: studentLabel,
+          organizationId: resolvedRelationships?.organizationId ?? student.organizationId ?? null,
+          details: {
+            fields: changedFields,
+            ...(resolvedRelationships
+              ? {
+                  from: { organizationId: student.organizationId, classId: student.classId, gradeId: student.gradeId },
+                  to: {
+                    organizationId: resolvedRelationships.organizationId,
+                    classId: resolvedRelationships.classId,
+                    gradeId: resolvedRelationships.gradeId,
+                  },
+                }
+              : {}),
+          },
+        });
+      }
+
+      if (requestedParentId !== undefined) {
+        await Student.update({ ParentId: requestedParentId } as any, {
+          where: { id: student.id },
+          transaction,
+        });
+        auditEntries.push({
+          action: requestedParentId === null ? "student.unlink_parent" : "student.link_parent",
+          targetType: "student",
+          targetId: student.id,
+          targetLabel: studentLabel,
+          organizationId: student.organizationId ?? null,
+          details: {
+            previousParentId: (student as any).ParentId ?? null,
+            parentId: requestedParentId,
+            parent: parentRecord ? userLabel((parentRecord as any).user) : null,
+          },
+        });
+      }
+
       return res.status(200).json({ message: "Student updated successfully" });
     });
+
+    for (const entry of auditEntries) await recordAdminAction(req, entry);
+    return response;
   } catch (error: any) {
     if (error instanceof InvalidOptionalIdError) {
       return res.status(400).json({ message: error.message });
@@ -792,6 +899,13 @@ const deleteStudent = async (req: Request, res: Response) => {
 
     await student.destroy();
     if (userRecord) await userRecord.destroy();
+    await recordAdminAction(req, {
+      action: "student.delete",
+      targetType: "student",
+      targetId: student.id,
+      targetLabel: userLabel(userRecord),
+      organizationId: student.organizationId ?? null,
+    });
 
     return res.status(200).json({ message: "Student deleted successfully" });
   } catch (error) {
@@ -825,14 +939,16 @@ const listUsers = async (req: Request, res: Response) => {
     }
 
     // School admins only see users belonging to their school: its students
-    // and teachers, plus parents linked to its students. Admin accounts are
-    // never visible to them.
+    // and teachers. Admin and parent accounts are never visible to them.
     const scope = getAdminScope(req);
     if (scope !== null) {
+      if (role === "Parent") {
+        return res.status(403).json({ message: "School admins cannot view parent accounts" });
+      }
       const [studentRows, teacherRows] = await Promise.all([
         Student.findAll({
           where: { organizationId: scope },
-          attributes: ["userId", "ParentId"],
+          attributes: ["userId"],
           raw: true,
         }),
         Teacher.findAll({
@@ -841,20 +957,9 @@ const listUsers = async (req: Request, res: Response) => {
           raw: true,
         }),
       ]);
-      const parentIds = Array.from(
-        new Set(studentRows.map((r: any) => r.ParentId).filter(Boolean)),
-      );
-      const parentRows = parentIds.length
-        ? await Parent.findAll({
-            where: { id: parentIds },
-            attributes: ["userId"],
-            raw: true,
-          })
-        : [];
       const scopedUserIds = [
         ...studentRows.map((r: any) => r.userId),
         ...teacherRows.map((r: any) => r.userId),
-        ...parentRows.map((r: any) => r.userId),
       ].filter(Boolean);
       // [0] keeps the IN clause valid when the school has no members yet
       where.id = { [Op.in]: scopedUserIds.length ? scopedUserIds : [0] };
@@ -879,11 +984,18 @@ const listUsers = async (req: Request, res: Response) => {
 
 const listTeachers = async (req: Request, res: Response) => {
   try {
-    const { search, organizationId, page = "1", limit = "20" } = req.query;
+    const { search, organizationId, missing, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
     const organizationIdFilter = parseQueryId(organizationId, "organizationId");
     if (organizationIdFilter) where.organizationId = organizationIdFilter;
+    // The data-quality drill-down: only teachers who teach no class.
+    if (missing !== undefined && missing !== "") {
+      if (missing !== "class") throw new InvalidQueryParamError("missing", "missing must be class");
+      where.id = {
+        [Op.notIn]: literal("(SELECT `teacherId` FROM `Classes` WHERE `teacherId` IS NOT NULL)"),
+      };
+    }
 
     const scope = getAdminScope(req);
     if (scope !== null) where.organizationId = scope;
@@ -948,7 +1060,7 @@ const listTeachers = async (req: Request, res: Response) => {
 
 const listParents = async (req: Request, res: Response) => {
   try {
-    const { search, page = "1", limit = "20" } = req.query;
+    const { search, organizationId, page = "1", limit = "20" } = req.query;
 
     const userWhere: any = {};
     if (search) {
@@ -961,9 +1073,10 @@ const listParents = async (req: Request, res: Response) => {
 
     const { pageNum, limitNum, offset } = parsePagination(page, limit);
 
-    // School admins see parents imported into their school
-    // (Parents.organizationId) and parents linked to one of its students.
-    const parentScope = getAdminScope(req);
+    // A school's parents: those imported into it (Parents.organizationId) and
+    // those linked to one of its students. The route is Super Admin only; the
+    // `?organizationId=` filter narrows the list to one school.
+    const parentScope = getAdminScope(req) ?? parseQueryId(organizationId, "organizationId") ?? null;
     const parentWhere =
       parentScope !== null
         ? {
@@ -997,19 +1110,26 @@ const listParents = async (req: Request, res: Response) => {
         {
           model: Student,
           as: "Students",
-          attributes: ["id"],
-          // Only this school's children are listed for a school admin.
+          attributes: ["id", "organizationId", "classId"],
+          // Filtered to one school, only that school's children are listed.
           where:
             parentScope !== null
               ? { organizationId: parentScope }
               : undefined,
           required: false,
+          include: [
+            { model: User, as: "user", attributes: ["firstName", "lastName"], required: false },
+            { model: Class, as: "Class", attributes: ["id", "classname"], required: false },
+          ],
         },
       ],
     });
 
     return res.status(200).json({ data: rows, total: count, page: pageNum, limit: limitNum });
   } catch (error) {
+    if (error instanceof InvalidQueryParamError) {
+      return res.status(400).json({ message: error.message, field: error.field });
+    }
     logger.error("Error in listParents:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
@@ -1044,12 +1164,18 @@ const createUser = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "email must be a valid email address", field: "email" });
     }
 
-    // School admins can only create members of their own school, never admins
+    // School admins can only create members of their own school: never admins,
+    // and never parents (a parent signs up and links their own children).
     const scope = getAdminScope(req);
     if (scope !== null && role === "Admin") {
       return res
         .status(403)
         .json({ message: "School admins cannot create admin accounts" });
+    }
+    if (scope !== null && role === "Parent") {
+      return res
+        .status(403)
+        .json({ message: "School admins cannot create parent accounts" });
     }
     const effectiveOrganizationId = scope !== null ? scope : organizationId;
 
@@ -1189,6 +1315,15 @@ const createUser = async (req: Request, res: Response) => {
       }
     });
 
+    await recordAdminAction(req, {
+      action: "user.create",
+      targetType: "user",
+      targetId: userRecord.id,
+      targetLabel: userLabel(userRecord),
+      organizationId: resolvedOrganizationId ?? null,
+      details: { role: userRecord.role },
+    });
+
     return res.status(201).json({
       data: {
         id: userRecord.id,
@@ -1235,7 +1370,10 @@ const updateUser = async (req: Request, res: Response) => {
     const requestedClassId = parseOptionalPositiveId(classId, "classId");
     const requestedGradeId = parseOptionalPositiveId(gradeId, "gradeId");
 
-    return await User.sequelize!.transaction(async (transaction) => {
+    // Written to the activity log once the transaction has committed.
+    let auditEntry: Parameters<typeof recordAdminAction>[1] | null = null;
+
+    const response = await User.sequelize!.transaction(async (transaction) => {
       const userRecord = await User.findByPk(userId, { transaction });
       if (!userRecord) {
         return res.status(404).json({ message: "User not found" });
@@ -1407,8 +1545,25 @@ const updateUser = async (req: Request, res: Response) => {
         await userRecord.update(userUpdateData, { transaction });
       }
 
+      const submitted = ["firstName", "lastName", "email", "organizationId", "classId", "gradeId", "classIds"].filter(
+        (field) => req.body?.[field] !== undefined,
+      );
+      if (submitted.length > 0) {
+        auditEntry = {
+          action: "user.update",
+          targetType: "user",
+          targetId: userRecord.id,
+          targetLabel: userLabel(userRecord),
+          organizationId: requestedOrganizationId ?? scope ?? userRecord.organizationId ?? null,
+          details: { role: userRecord.role, fields: submitted },
+        };
+      }
+
       return res.status(200).json({ message: "User updated successfully" });
     });
+
+    if (auditEntry) await recordAdminAction(req, auditEntry);
+    return response;
   } catch (error: any) {
     if (error instanceof InvalidOptionalIdError) {
       return res.status(400).json({ message: error.message });
@@ -1444,14 +1599,20 @@ const deleteUser = async (req: Request, res: Response) => {
       return res.status(404).json({ message: "User not found" });
     }
 
+    // The school the deleted account belonged to, for the activity log.
+    let affectedOrganizationId: number | null = scope ?? userRecord.organizationId ?? null;
+
     if (userRecord.role === "Student") {
       const student = await Student.findOne({ where: { userId } });
       if (student) {
+        affectedOrganizationId = student.organizationId ?? affectedOrganizationId;
         await StudentTask.destroy({ where: { studentId: student.id } });
         await StudentChallenge.destroy({ where: { studentId: student.id } });
         await student.destroy();
       }
     } else if (userRecord.role === "Teacher") {
+      const teacher = await Teacher.findOne({ where: { userId } });
+      affectedOrganizationId = teacher?.organizationId ?? affectedOrganizationId;
       await Teacher.destroy({ where: { userId } });
     } else if (userRecord.role === "Parent") {
       const parent = await Parent.findOne({ where: { userId } });
@@ -1462,6 +1623,14 @@ const deleteUser = async (req: Request, res: Response) => {
     }
 
     await userRecord.destroy();
+    await recordAdminAction(req, {
+      action: "user.delete",
+      targetType: "user",
+      targetId: userRecord.id,
+      targetLabel: userLabel(userRecord),
+      organizationId: affectedOrganizationId,
+      details: { role: userRecord.role },
+    });
 
     return res.status(200).json({ message: "User deleted successfully" });
   } catch (error) {
@@ -1476,7 +1645,7 @@ const deleteUser = async (req: Request, res: Response) => {
 
 const listClasses = async (req: Request, res: Response) => {
   try {
-    const { search, organizationId, gradeId, page = "1", limit = "20" } = req.query;
+    const { search, organizationId, gradeId, missing, page = "1", limit = "20" } = req.query;
 
     const where: any = {};
     const organizationIdFilter = parseQueryId(organizationId, "organizationId");
@@ -1484,6 +1653,12 @@ const listClasses = async (req: Request, res: Response) => {
     if (organizationIdFilter) where.organizationId = organizationIdFilter;
     if (gradeIdFilter) where.gradeId = gradeIdFilter;
     if (search) where.classname = { [Op.like]: `%${String(search)}%` };
+    // The data-quality drill-down: only classes missing a teacher or a grade.
+    if (missing !== undefined && missing !== "") {
+      if (missing === "teacher") where.teacherId = null;
+      else if (missing === "grade") where.gradeId = null;
+      else throw new InvalidQueryParamError("missing", "missing must be teacher or grade");
+    }
 
     const scope = getAdminScope(req);
     if (scope !== null) where.organizationId = scope;
@@ -1498,7 +1673,15 @@ const listClasses = async (req: Request, res: Response) => {
       distinct: true,
       include: [
         { model: Organization, as: "Organization", attributes: ["id", "name"], required: false },
-        { model: Teacher, as: "Teachers", attributes: ["id", "userId"], required: false },
+        {
+          model: Teacher,
+          as: "Teachers",
+          attributes: ["id", "userId"],
+          required: false,
+          include: [
+            { model: User, as: "user", attributes: ["firstName", "lastName"], required: false },
+          ],
+        },
         { model: Student, as: "Students", attributes: ["id"], required: false },
         { model: Grade, as: "GradeEntity", attributes: ["id", "name"], required: false },
       ],
@@ -1551,6 +1734,14 @@ const createClass = async (req: Request, res: Response) => {
       grade: gradeRecord.name,
       organizationId: organization.id,
       classdescrption,
+    });
+    await recordAdminAction(req, {
+      action: "class.create",
+      targetType: "class",
+      targetId: newClass.id,
+      targetLabel: String(newClass.classname),
+      organizationId: organization.id,
+      details: { grade: gradeRecord.name },
     });
 
     return res.status(201).json({ data: newClass });
@@ -1652,6 +1843,14 @@ const updateClass = async (req: Request, res: Response) => {
 
     if (Object.keys(updateData).length > 0) {
       await targetClass.update(updateData);
+      await recordAdminAction(req, {
+        action: "class.update",
+        targetType: "class",
+        targetId: targetClass.id,
+        targetLabel: String(targetClass.classname),
+        organizationId: targetClass.organizationId ?? null,
+        details: { fields: Object.keys(updateData) },
+      });
     }
 
     return res.status(200).json({ data: targetClass });
@@ -1693,6 +1892,13 @@ const deleteClass = async (req: Request, res: Response) => {
     }
 
     await targetClass.destroy();
+    await recordAdminAction(req, {
+      action: "class.delete",
+      targetType: "class",
+      targetId: targetClass.id,
+      targetLabel: String(targetClass.classname),
+      organizationId: targetClass.organizationId ?? null,
+    });
 
     return res.status(200).json({ message: "Class deleted successfully" });
   } catch (error) {
@@ -1722,8 +1928,17 @@ const resetUserPassword = async (req: Request, res: Response) => {
     await userRecord.update({
       password: hashedPassword,
       isAccess: true,
+      // A reset re-enables an account an administrator had disabled.
+      disabledAt: null,
       otpVerified: true,
       tokenVersion: (userRecord.tokenVersion || 0) + 1,
+    } as any);
+    await recordAdminAction(req, {
+      action: "user.reset_password",
+      targetType: "user",
+      targetId: userRecord.id,
+      targetLabel: userLabel(userRecord),
+      details: { role: userRecord.role },
     });
 
     return res.status(200).json({
@@ -1820,6 +2035,13 @@ const createGrade = async (req: Request, res: Response) => {
     const grade = await Grade.create({
       name: normalizedName,
       organizationId: resolvedOrganizationId,
+    });
+    await recordAdminAction(req, {
+      action: "grade.create",
+      targetType: "grade",
+      targetId: grade.id,
+      targetLabel: grade.name,
+      organizationId: grade.organizationId ?? null,
     });
     return res.status(201).json({ data: grade });
   } catch (error: any) {
@@ -1989,6 +2211,13 @@ const updateGrade = async (req: Request, res: Response) => {
         name: normalizedName,
         organizationId: resolvedOrgId,
       });
+      await recordAdminAction(req, {
+        action: "grade.update",
+        targetType: "grade",
+        targetId: grade.id,
+        targetLabel: grade.name,
+        organizationId: grade.organizationId ?? null,
+      });
     }
 
     return res.status(200).json({ data: grade });
@@ -2038,6 +2267,13 @@ const deleteGrade = async (req: Request, res: Response) => {
     }
 
     await grade.destroy();
+    await recordAdminAction(req, {
+      action: "grade.delete",
+      targetType: "grade",
+      targetId: grade.id,
+      targetLabel: grade.name,
+      organizationId: grade.organizationId ?? null,
+    });
     return res.status(200).json({ message: "Grade deleted successfully" });
   } catch (error) {
     logger.error("Error in deleteGrade:", { error });
@@ -2517,6 +2753,13 @@ const createImpersonationHandoff = async (req: Request, res: Response) => {
     });
 
     const studentName = `${targetUser.firstName || ""} ${targetUser.lastName || ""}`.trim() || "Student";
+    await recordAdminAction(req, {
+      action: "student.impersonate",
+      targetType: "student",
+      targetId: student.id,
+      targetLabel: userLabel(targetUser),
+      organizationId: student.organizationId ?? null,
+    });
 
     return res.status(200).json({
       status: 200,
@@ -3130,6 +3373,14 @@ const updateLeaderboardSettings = async (req: Request, res: Response) => {
     if (!org) return res.status(404).json({ message: "Organization not found" });
 
     await org.update(updates);
+    await recordAdminAction(req, {
+      action: "leaderboard.update",
+      targetType: "organization",
+      targetId: org.id,
+      targetLabel: org.name,
+      organizationId: org.id,
+      details: updates,
+    });
 
     return res.status(200).json({
       message: "Leaderboard settings updated",

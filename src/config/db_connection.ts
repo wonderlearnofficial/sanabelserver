@@ -29,6 +29,7 @@ import Admin from "../models/admin.model";
 import AppConfig from "../models/app-config.model";
 import EmailEvent from "../models/email-event.model";
 import ImportRun from "../models/import-run.model";
+import AdminAuditLog from "../models/admin-audit-log.model";
 import AdminImpersonationHandoff from "../models/admin-impersonation-handoff.model";
 
 // Seeder data
@@ -117,6 +118,7 @@ const rundb = async () => {
     AppConfig,
     EmailEvent,
     ImportRun,
+    AdminAuditLog,
     AdminImpersonationHandoff,
   };
   if (!modelsInitialized) {

@@ -3,6 +3,7 @@ import crypto from "crypto";
 import { Op } from "sequelize";
 import User from "../models/user.model";
 import logger from "../config/logger";
+import { recordActivity, recordSignIn } from "../helpers/sessionActivity";
 import AdminImpersonationHandoff from "../models/admin-impersonation-handoff.model";
 
 import Student from "../models/student.model";
@@ -103,6 +104,8 @@ const login = async (req: Request, res: Response) => {
         message: "Incorrect email or password",
       });
     }
+    await recordSignIn(req, account.id);
+
     // Short-lived access token plus a refresh token for silent renewal.
     const token = signAccessToken({
       id: account.id,
@@ -649,6 +652,7 @@ const refreshAccessToken = async (req: Request, res: Response) => {
       imp: payload.imp === true,
     };
     const token = signAccessToken(tokenUser);
+    if (payload.imp !== true) recordActivity(user.id, user.lastActiveAt);
     // Rotate the refresh token on every renewal. This gives active sessions a
     // sliding lifetime while logout can still revoke the entire token family
     // through tokenVersion.

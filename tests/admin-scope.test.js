@@ -5,8 +5,11 @@ const User = require("../dist/models/user.model").default;
 const Student = require("../dist/models/student.model").default;
 const Teacher = require("../dist/models/teacher.model").default;
 const Class = require("../dist/models/class.model").default;
+const Parent = require("../dist/models/parent.model").default;
 
 const {
+  updateStudent,
+  listUsers,
   createOrganization,
   updateOrganization,
   deleteOrganization,
@@ -69,6 +72,83 @@ test("school admins cannot create admin accounts", async () => {
   assert.match(res.body.message, /cannot create admin/);
 });
 
+// Parents sign up and link their own children, so they are not school members.
+test("school admins cannot create parent accounts", async () => {
+  const res = makeResponse();
+  await createUser(
+    scopedReq({ body: { firstName: "X", email: "p@y.z", role: "Parent" } }),
+    res,
+  );
+  assert.equal(res.statusCode, 403);
+  assert.match(res.body.message, /cannot create parent/);
+});
+
+test("school admins cannot list parent accounts", async () => {
+  const res = makeResponse();
+  await listUsers(scopedReq({ query: { role: "Parent" } }), res);
+  assert.equal(res.statusCode, 403);
+  assert.match(res.body.message, /cannot view parent/);
+});
+
+test("parent accounts look nonexistent to school admins in updateUser", async () => {
+  Object.defineProperty(User, "sequelize", {
+    value: { transaction: async (fn) => fn({ fake: "tx" }) },
+    configurable: true,
+  });
+  User.findByPk = async () => ({ id: 7, role: "Parent" });
+
+  const res = makeResponse();
+  await updateUser(scopedReq({ params: { userId: "7" }, body: { firstName: "New" } }), res);
+  assert.equal(res.statusCode, 404);
+});
+
+test("school admins cannot link a parent to a student", async () => {
+  Object.defineProperty(User, "sequelize", {
+    value: { transaction: async (fn) => fn({ fake: "tx" }) },
+    configurable: true,
+  });
+  Student.findByPk = async () => ({ id: 3, organizationId: 5, userId: null });
+
+  const res = makeResponse();
+  await updateStudent(scopedReq({ params: { studentId: "3" }, body: { parentId: 2 } }), res);
+  assert.equal(res.statusCode, 403);
+  assert.match(res.body.message, /cannot link parents/);
+});
+
+test("a super admin links and unlinks a student's parent", async () => {
+  Object.defineProperty(User, "sequelize", {
+    value: { transaction: async (fn) => fn({ fake: "tx" }) },
+    configurable: true,
+  });
+  Student.findByPk = async () => ({ id: 3, organizationId: 5, userId: null });
+  const updates = [];
+  Student.update = async (values, options) => {
+    updates.push({ values, where: options.where });
+    return [1];
+  };
+
+  // Linking a parent that does not exist is refused, and nothing is written.
+  Parent.findByPk = async () => null;
+  let res = makeResponse();
+  await updateStudent({ params: { studentId: "3" }, body: { parentId: 99 }, query: {} }, res);
+  assert.equal(res.statusCode, 400);
+  assert.equal(updates.length, 0);
+
+  Parent.findByPk = async () => ({ id: 2 });
+  res = makeResponse();
+  await updateStudent({ params: { studentId: "3" }, body: { parentId: 2 }, query: {} }, res);
+  assert.equal(res.statusCode, 200);
+
+  res = makeResponse();
+  await updateStudent({ params: { studentId: "3" }, body: { parentId: null }, query: {} }, res);
+  assert.equal(res.statusCode, 200);
+
+  assert.deepEqual(updates, [
+    { values: { ParentId: 2 }, where: { id: 3 } },
+    { values: { ParentId: null }, where: { id: 3 } },
+  ]);
+});
+
 test("admin accounts look nonexistent to school admins in updateUser", async () => {
   Object.defineProperty(User, "sequelize", {
     value: { transaction: async (fn) => fn({ fake: "tx" }) },
@@ -108,6 +188,23 @@ test("listStudents is forced to the school scope regardless of query params", as
 
   assert.equal(res.statusCode, 200);
   assert.equal(captured.where.organizationId, 5);
+  // A school admin's student rows never carry the linked parent.
+  assert.equal(captured.include.some((entry) => entry.as === "Parent"), false);
+});
+
+test("listStudents includes the linked parent for a super admin", async () => {
+  let captured;
+  Student.findAndCountAll = async (options) => {
+    captured = options;
+    return { rows: [], count: 0 };
+  };
+
+  const res = makeResponse();
+  await listStudents({ params: {}, body: {}, query: { organizationId: "9" } }, res);
+
+  assert.equal(res.statusCode, 200);
+  assert.equal(captured.where.organizationId, 9);
+  assert.equal(captured.include.some((entry) => entry.as === "Parent"), true);
 });
 
 test("dashboard stats for a school admin count only their school", async () => {
@@ -118,21 +215,16 @@ test("dashboard stats for a school admin count only their school", async () => {
   };
   Teacher.count = async () => 7;
   Class.count = async () => 4;
-  Student.findAll = async () => [
-    { ParentId: 1 },
-    { ParentId: 1 },
-    { ParentId: 2 },
-  ];
 
   const res = makeResponse();
   await getAdminStats(scopedReq(), res);
 
   assert.equal(res.statusCode, 200);
+  // Parents are not school members, so a School Admin's counts leave them out.
   assert.deepEqual(res.body.data, {
-    users: 40 + 7 + 2,
+    users: 40 + 7,
     students: 40,
     teachers: 7,
-    parents: 2,
     organizations: 1,
     classes: 4,
   });

@@ -49,6 +49,13 @@ class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
   // Admin scope: null = super admin (sees everything); a value locks the
   // admin to that organization's data. Ignored for non-Admin roles.
   declare organizationId: CreationOptional<number | null>;
+  // Sign-in tracking, for the admin console's session controls.
+  declare lastLoginAt: CreationOptional<Date | null>;
+  declare lastActiveAt: CreationOptional<Date | null>;
+  declare lastLoginUserAgent: CreationOptional<string | null>;
+  // Set when an administrator disables the account (isAccess=false alone also
+  // means "email not verified yet").
+  declare disabledAt: CreationOptional<Date | null>;
   static associate(models: any) {
     User.hasMany(Student, { foreignKey: "userId", as: "Students" });
     User.hasMany(Teacher, { foreignKey: "userId", as: "Teachers" });
@@ -152,6 +159,26 @@ class User extends Model<InferAttributes<User>, InferCreationAttributes<User>> {
           // No DB-level FK on purpose — see the add-user-organization-scope
           // migration; scope integrity is enforced in the admin controller.
           type: DataTypes.INTEGER,
+          allowNull: true,
+          defaultValue: null,
+        },
+        lastLoginAt: {
+          type: DataTypes.DATE,
+          allowNull: true,
+          defaultValue: null,
+        },
+        lastActiveAt: {
+          type: DataTypes.DATE,
+          allowNull: true,
+          defaultValue: null,
+        },
+        lastLoginUserAgent: {
+          type: DataTypes.STRING(255),
+          allowNull: true,
+          defaultValue: null,
+        },
+        disabledAt: {
+          type: DataTypes.DATE,
           allowNull: true,
           defaultValue: null,
         },

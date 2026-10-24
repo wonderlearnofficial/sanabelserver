@@ -11,7 +11,7 @@ import {
   addParent,
 } from "../controllers/parentController";
 import { authenticateToken } from "../middleware/auth";
-import { checkparent, checkAdmin } from "../middleware/checkrole";
+import { checkparent, checkAdmin, requireSuperAdmin } from "../middleware/checkrole";
 import {
   appearTaskesCategory,
   appearTaskesType,
@@ -548,7 +548,7 @@ router.get("/appear-student-deatiled/:studentId", authenticateToken, checkparent
  * @swagger
  * /parents/add-parent:
  *   post:
- *     summary: Bulk-import parent accounts from an Excel/CSV file (admin only)
+ *     summary: Bulk-import parent accounts from an Excel/CSV file (Super Admin only)
  *     description: |
  *       Columns (case-insensitive aliases accepted): firstName, lastName, email,
  *       optional dateOfBirth/gender. Every created account's password is a fixed
@@ -574,6 +574,7 @@ router.post(
   "/add-parent",
   authenticateToken,
   checkAdmin,
+  requireSuperAdmin,
   upload.single("file"),
   processStudentMiddleware,
   addParent
