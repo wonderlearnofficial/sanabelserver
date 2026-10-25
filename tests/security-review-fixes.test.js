@@ -363,3 +363,43 @@ test("direct completion reports missing and foreign students identically", async
   assert.equal(missing.status, "unauthorized");
   assert.equal(result.body.summary.not_found, undefined);
 });
+
+test("send-auth refuses an admin-disabled account that never set a password", async () => {
+  const { sendOtp } = require("../dist/controllers/authController");
+  let touched = false;
+  User.findOne = async () => ({
+    id: 71,
+    isAccess: false,
+    password: null,
+    disabledAt: new Date(),
+    update: async () => {
+      touched = true;
+    },
+  });
+  User.create = async () => assert.fail("must not create");
+  const res = makeResponse();
+  await sendOtp({ body: { email: "disabled-pending@example.com" } }, res);
+  assert.equal(res.statusCode, 403);
+  assert.equal(touched, false, "no OTP is issued");
+});
+
+test("verfication-auth never re-enables an admin-disabled account", async () => {
+  const { verifyOTP } = require("../dist/controllers/authController");
+  let updated;
+  User.findOne = async () => ({
+    id: 71,
+    isAccess: false,
+    password: null,
+    disabledAt: new Date(),
+    resetOTP: "1234",
+    otpExpiry: new Date(Date.now() + 60000),
+    otpLockedUntil: null,
+    update: async (values) => {
+      updated = values;
+    },
+  });
+  const res = makeResponse();
+  await verifyOTP({ body: { email: "disabled-pending@example.com", otp: "1234" } }, res);
+  assert.equal(res.statusCode, 403);
+  assert.equal(updated, undefined, "isAccess must not be set");
+});

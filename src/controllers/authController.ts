@@ -50,6 +50,12 @@ const sendOtp = async (req: Request, res: Response) => {
         .status(400)
         .json({ status: 400, message: "Email already in use" });
     }
+    // An account an admin disabled before it set a password is still off.
+    if (existingUser && existingUser.disabledAt) {
+      return res
+        .status(403)
+        .json({ status: 403, message: "This account has been disabled by an administrator" });
+    }
     const otp = generateOTP();
     const otpExpiry = new Date(Date.now() + 5 * 60 * 1000);
 
@@ -152,6 +158,14 @@ const verifyOTP = async (req: Request, res: Response) => {
       return res.status(400).json({
         status: 400,
         message: "This email already belongs to an account. Sign in instead.",
+      });
+    }
+
+    // Proving control of the email never undoes an administrator's disable.
+    if (user.disabledAt) {
+      return res.status(403).json({
+        status: 403,
+        message: "This account has been disabled by an administrator",
       });
     }
 

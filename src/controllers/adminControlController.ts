@@ -91,7 +91,7 @@ export const listSessions = async (req: Request, res: Response) => {
       where.role = role;
     }
     if (status !== undefined && status !== "") {
-      if (typeof status !== "string" || !STATUS_WHERE[status]) {
+      if (typeof status !== "string" || !Object.prototype.hasOwnProperty.call(STATUS_WHERE, status)) {
         return res.status(400).json({
           message: `status must be one of ${Object.keys(STATUS_WHERE).join(", ")}`,
           field: "status",
@@ -210,6 +210,11 @@ export const setUserAccess = async (req: Request, res: Response) => {
       }
       await user.update({ isAccess: true, disabledAt: null } as any);
     } else {
+      // Disabling an unverified account would let a later "enable" activate
+      // it without the email ever being verified.
+      if (!user.isAccess && !user.disabledAt) {
+        return res.status(409).json({ message: "This account is not verified yet, so there is nothing to disable" });
+      }
       await user.update({
         isAccess: false,
         disabledAt: new Date(),

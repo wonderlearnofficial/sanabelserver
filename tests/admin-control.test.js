@@ -127,3 +127,32 @@ test("session and log filters reject values they do not understand", async () =>
   assert.equal(res.statusCode, 400);
   assert.equal(res.body.field, "from");
 });
+
+test("an unverified account cannot be disabled, so it can never be enabled unverified", async () => {
+  let updated;
+  User.findByPk = async () => ({
+    id: 8,
+    role: "Parent",
+    email: "pending@example.invalid",
+    tokenVersion: 0,
+    disabledAt: null,
+    isAccess: false,
+    async update(values) {
+      updated = values;
+    },
+  });
+
+  const res = makeResponse();
+  await setUserAccess(superReq({ params: { userId: "8" }, body: { enabled: false } }), res);
+  assert.equal(res.statusCode, 409);
+  assert.equal(updated, undefined);
+});
+
+test("the status filter refuses inherited object keys", async () => {
+  for (const status of ["constructor", "toString", "__proto__", "hasOwnProperty"]) {
+    const res = makeResponse();
+    await listSessions(superReq({ query: { status } }), res);
+    assert.equal(res.statusCode, 400, status);
+    assert.equal(res.body.field, "status");
+  }
+});
