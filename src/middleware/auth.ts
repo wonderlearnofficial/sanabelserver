@@ -2,6 +2,7 @@ import { Request, Response, NextFunction } from "express";
 import jwt, { JwtPayload } from "jsonwebtoken";
 import logger from "../config/logger";
 import { recordActivity } from "../helpers/sessionActivity";
+import { getSessionPolicy, isTokenTooOld } from "../helpers/sessionPolicy";
 import User from "../models/user.model";
 
 const authenticateToken = async (
@@ -34,6 +35,14 @@ const authenticateToken = async (
         code: "TOKEN_INVALID",
         message: "Token is invalid",
       });
+    }
+
+    // A Super Admin may have shortened the access lifetime since this token
+    // was signed. Treated as ordinary expiry, so the client renews silently.
+    if (isTokenTooOld(user.iat, getSessionPolicy().accessTokenMinutes * 60)) {
+      return res
+        .status(401)
+        .json({ status: 401, code: "TOKEN_EXPIRED", message: "Token expired" });
     }
 
     // A correctly signed token is not enough: the account may have been

@@ -61,6 +61,8 @@ const SUPER_ADMIN_ONLY = [
   ["patch", "/users/:userId/access"],
   ["post", "/organizations/:organizationId/sign-out"],
   ["get", "/audit-log"],
+  ["get", "/settings/session"],
+  ["patch", "/settings/session"],
 ];
 
 /**

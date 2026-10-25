@@ -12,6 +12,13 @@ import Class from "../models/class.model";
 import Organization from "../models/oraganization.model";
 import AdminAuditLog from "../models/admin-audit-log.model";
 import { recordAdminAction, userLabel } from "../helpers/adminAudit";
+import {
+  SESSION_LIMITS,
+  defaultSessionPolicy,
+  getSessionPolicy,
+  saveSessionPolicy,
+  validateSessionPolicy,
+} from "../helpers/sessionPolicy";
 
 /**
  * Super Admin platform control: sessions, account access, the activity log
@@ -443,6 +450,42 @@ export const dataQualityBySchool = async (_req: Request, res: Response) => {
     return res.status(200).json({ data: schools });
   } catch (error) {
     logger.error("Error in dataQualityBySchool:", { error });
+    return res.status(500).json({ message: "Internal Server Error" });
+  }
+};
+
+/** GET /admin/settings/session — the current token lifetimes and their bounds. */
+export const getSessionSettings = (_req: Request, res: Response) =>
+  res.status(200).json({
+    data: { policy: getSessionPolicy(), defaults: defaultSessionPolicy(), limits: SESSION_LIMITS },
+  });
+
+/**
+ * PATCH /admin/settings/session — sets both lifetimes.
+ * Body: { accessTokenMinutes, refreshTokenDays }. Applies to new tokens at once
+ * and to existing ones on their next use.
+ */
+export const updateSessionSettings = async (req: Request, res: Response) => {
+  try {
+    const checked = validateSessionPolicy(req.body);
+    if (!("policy" in checked)) {
+      return res.status(400).json({ message: checked.message, field: checked.field });
+    }
+    const previous = getSessionPolicy();
+    const policy = await saveSessionPolicy(checked.policy);
+
+    await recordAdminAction(req, {
+      action: "platform.session_policy",
+      targetType: "platform",
+      targetLabel: "Session lifetime",
+      details: { previous, next: policy },
+    });
+
+    return res.status(200).json({
+      data: { policy, defaults: defaultSessionPolicy(), limits: SESSION_LIMITS },
+    });
+  } catch (error) {
+    logger.error("Error in updateSessionSettings:", { error });
     return res.status(500).json({ message: "Internal Server Error" });
   }
 };

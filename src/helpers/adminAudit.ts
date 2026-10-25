@@ -31,6 +31,7 @@ export type AdminAuditAction =
   | "organization.delete"
   | "organization.sign_out"
   | "platform.sign_out_all"
+  | "platform.session_policy"
   | "class.create"
   | "class.update"
   | "class.delete"

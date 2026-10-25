@@ -30,6 +30,8 @@ import AppConfig from "../models/app-config.model";
 import EmailEvent from "../models/email-event.model";
 import ImportRun from "../models/import-run.model";
 import AdminAuditLog from "../models/admin-audit-log.model";
+import PlatformSetting from "../models/platform-setting.model";
+import { startSessionPolicy } from "../helpers/sessionPolicy";
 import AdminImpersonationHandoff from "../models/admin-impersonation-handoff.model";
 
 // Seeder data
@@ -120,6 +122,7 @@ const rundb = async () => {
     ImportRun,
     AdminAuditLog,
     AdminImpersonationHandoff,
+    PlatformSetting,
   };
   if (!modelsInitialized) {
     Object.values(models).forEach((model) => {
@@ -344,6 +347,9 @@ const seedDefaultAppConfigs = async () => {
   } catch (error) {
     logger.error("❌ Error initializing app configs:", { error });
   }
+
+  // Token lifetimes a Super Admin set; the environment defaults apply until then.
+  await startSessionPolicy();
 };
 
 // Challenges catalog represents application-wide milestones and trophies.

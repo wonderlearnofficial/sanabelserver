@@ -263,6 +263,11 @@ router.post(
 /** Who did what, to whom, in which school, and when. Newest first. */
 router.get("/audit-log", ...superAdminOnly, adminControlController.listAuditLog);
 
+/** Token lifetimes: how long an access token and a whole sign-in last. */
+router.get("/settings/session", ...superAdminOnly, adminControlController.getSessionSettings);
+/** Body: { accessTokenMinutes, refreshTokenDays }. */
+router.patch("/settings/session", ...superAdminOnly, adminControlController.updateSessionSettings);
+
 /**
  * @swagger
  * /admin/me:

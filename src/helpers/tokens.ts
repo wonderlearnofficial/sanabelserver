@@ -2,14 +2,16 @@
 // controllers and to avoid the @types/jsonwebtoken StringValue friction on
 // env-sourced TTL strings.
 const jwt = require("jsonwebtoken");
+import { getSessionPolicy } from "./sessionPolicy";
 
-// Short-lived access token; long-lived, rolling refresh token. Both are env-tunable.
-const ACCESS_TTL = process.env.ACCESS_TOKEN_TTL || "30m";
-// The refresh endpoint issues a replacement refresh token on every successful
-// renewal, so an active user can remain signed in without weakening the short
-// access-token lifetime. A user who is inactive for a full year must sign in
-// again.
-const REFRESH_TTL = process.env.REFRESH_TOKEN_TTL || "365d";
+// Short-lived access token; long-lived, rolling refresh token. A Super Admin
+// sets both lifetimes from the admin console (helpers/sessionPolicy.ts); the
+// ACCESS_TOKEN_TTL / REFRESH_TOKEN_TTL environment values are the defaults
+// until then. The refresh endpoint issues a replacement refresh token on every
+// successful renewal, so an active user stays signed in, while one who is away
+// longer than the refresh lifetime must sign in again.
+const accessTtlSeconds = (): number => getSessionPolicy().accessTokenMinutes * 60;
+const refreshTtlSeconds = (): number => getSessionPolicy().refreshTokenDays * 24 * 60 * 60;
 
 function accessSecret(): string {
   const secret = process.env.JWT_SECRET;
@@ -47,7 +49,7 @@ export function signAccessToken(user: TokenUser): string {
       ...(user.imp === true ? { imp: true } : {}),
     },
     accessSecret(),
-    { expiresIn: ACCESS_TTL },
+    { expiresIn: accessTtlSeconds() },
   );
 }
 
@@ -64,7 +66,7 @@ export function signRefreshToken(user: TokenUser): string {
       ...(user.imp === true ? { imp: true } : {}),
     },
     refreshSecret(),
-    { expiresIn: REFRESH_TTL },
+    { expiresIn: refreshTtlSeconds() },
   );
 }
 

@@ -41,6 +41,7 @@ import {
   signRefreshToken,
   verifyRefreshToken,
 } from "../helpers/tokens";
+import { getSessionPolicy, isTokenTooOld } from "../helpers/sessionPolicy";
 // import upload from "../config/cloudaryconfig"; // Import multer config
 
 const jwt = require("jsonwebtoken");
@@ -604,6 +605,16 @@ const refreshAccessToken = async (req: Request, res: Response) => {
       return res
         .status(403)
         .json({ status: 403, message: "Invalid refresh token" });
+    }
+
+    // The sign-in lifetime may have been shortened since this token was
+    // issued; the current setting applies to every session.
+    if (isTokenTooOld(payload.iat, getSessionPolicy().refreshTokenDays * 24 * 60 * 60)) {
+      return res.status(401).json({
+        status: 401,
+        code: "SESSION_EXPIRED",
+        message: "Session expired. Sign in again.",
+      });
     }
 
     const user = await User.findByPk(payload.id);
