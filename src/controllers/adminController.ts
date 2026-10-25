@@ -1,6 +1,7 @@
 import { Request, Response } from "express";
 import { JwtPayload } from "jsonwebtoken";
 import { Op } from "sequelize";
+import { Op as CoreOp, col, fn, where as sqlWhere } from "@sequelize/core";
 import bcrypt from "bcryptjs";
 import logger from "../config/logger";
 
@@ -322,6 +323,21 @@ const getOrganization = async (req: Request, res: Response) => {
   }
 };
 
+/**
+ * A school whose name matches `name` ignoring case, other than `excludeId`.
+ * Names are stored as typed; uniqueness is case-insensitive whatever the
+ * column collation is.
+ */
+const findOrganizationNamed = (name: string, excludeId?: number) =>
+  Organization.findOne({
+    where: {
+      [CoreOp.and]: [
+        sqlWhere(fn("LOWER", col("name")), name.toLowerCase()),
+        ...(excludeId ? [{ id: { [CoreOp.ne]: excludeId } }] : []),
+      ],
+    },
+  });
+
 const createOrganization = async (req: Request, res: Response) => {
   try {
     if (getAdminScope(req) !== null) {
@@ -336,15 +352,18 @@ const createOrganization = async (req: Request, res: Response) => {
       return res.status(400).json({ message: "name is required" });
     }
 
-    const normalizedName = name.trim().toLowerCase();
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      return res.status(400).json({ message: "name is required" });
+    }
 
-    const existing = await Organization.findOne({ where: { name: normalizedName } });
+    const existing = await findOrganizationNamed(trimmedName);
     if (existing) {
       return res.status(409).json({ message: "Organization with this name already exists" });
     }
 
     const organization = await Organization.create({
-      name: normalizedName,
+      name: trimmedName,
       type: type || OrganizationType.School,
       img,
     });
@@ -385,7 +404,16 @@ const updateOrganization = async (req: Request, res: Response) => {
     }
 
     const updateData: Record<string, any> = {};
-    if (name) updateData.name = name.trim().toLowerCase();
+    if (name !== undefined) {
+      const trimmedName = typeof name === "string" ? name.trim() : "";
+      if (!trimmedName) {
+        return res.status(400).json({ message: "name cannot be empty", field: "name" });
+      }
+      if (await findOrganizationNamed(trimmedName, organization.id)) {
+        return res.status(409).json({ message: "Organization with this name already exists", field: "name" });
+      }
+      updateData.name = trimmedName;
+    }
     if (type) updateData.type = type;
     if (img !== undefined) updateData.img = img;
 
