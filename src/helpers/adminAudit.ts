@@ -41,7 +41,8 @@ export type AdminAuditAction =
   | "grade.import"
   | "import.batch"
   | "app_version.update"
-  | "leaderboard.update";
+  | "leaderboard.update"
+  | "deletion_request.update";
 
 export interface AdminAuditEntry {
   action: AdminAuditAction;

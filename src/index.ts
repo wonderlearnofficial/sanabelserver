@@ -23,6 +23,7 @@ import { router as admin_routes } from "./routes/admin_routes";
 import { router as mission_routes } from "./routes/mission_routes";
 import { router as app_routes } from "./routes/app_routes";
 import { router as dev_routes } from "./routes/dev_routes";
+import { router as account_deletion_routes } from "./routes/account_deletion_routes";
 import { isDevEnvironment, getTestAccounts } from "./controllers/devController";
 import { initPrayerTimeScheduler } from "./services/prayerTimeService";
 import logger from "./config/logger";
@@ -87,6 +88,15 @@ const authLimiter = rateLimit({
   message: { success: false, message: "Too many attempts, try again later." },
 });
 
+// The public deletion form is unauthenticated: a small per-IP budget stops it flooding the admins.
+const deletionLimiter = rateLimit({
+  windowMs: 60 * 60 * 1000,
+  limit: Number(process.env.DELETION_REQUEST_RATE_LIMIT) || 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: "Too many requests, try again later." },
+});
+
 const refreshLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
   limit: Number(process.env.REFRESH_RATE_LIMIT) || 2000,
@@ -102,6 +112,7 @@ app.use(
 );
 
 // Rate-limit the brute-forceable, unauthenticated auth endpoints.
+app.use("/account-deletion", deletionLimiter);
 app.use("/users/login", authLimiter);
 app.use("/users/registration", authLimiter);
 app.use("/users/send-otp", authLimiter);
@@ -127,6 +138,7 @@ app.use("/teachers", teacher_routes);
 app.use("/admin", admin_routes);
 app.use("/mission", mission_routes);
 app.use("/app", app_routes);
+app.use("/account-deletion", account_deletion_routes);
 
 // /dev issues tokens without a password, so it is mounted only when NODE_ENV
 // is explicitly "development" or "test". Fail closed: an unset or unexpected

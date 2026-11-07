@@ -30,6 +30,7 @@ import AppConfig from "../models/app-config.model";
 import EmailEvent from "../models/email-event.model";
 import ImportRun from "../models/import-run.model";
 import AdminAuditLog from "../models/admin-audit-log.model";
+import AccountDeletionRequest from "../models/account-deletion-request.model";
 import PlatformSetting from "../models/platform-setting.model";
 import { startSessionPolicy } from "../helpers/sessionPolicy";
 import AdminImpersonationHandoff from "../models/admin-impersonation-handoff.model";
@@ -123,6 +124,7 @@ const rundb = async () => {
     AdminAuditLog,
     AdminImpersonationHandoff,
     PlatformSetting,
+    AccountDeletionRequest,
   };
   if (!modelsInitialized) {
     Object.values(models).forEach((model) => {

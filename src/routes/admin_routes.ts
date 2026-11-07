@@ -1,3 +1,4 @@
+import * as accountDeletionController from "../controllers/accountDeletionController";
 import { authenticateToken } from "../middleware/auth";
 import { checkAdmin, requireSuperAdmin } from "../middleware/checkrole";
 import * as adminController from "../controllers/adminController";
@@ -415,6 +416,10 @@ router.post("/users", authenticateToken, checkAdmin, adminController.createUser)
  */
 router.patch("/users/:userId", authenticateToken, checkAdmin, adminController.updateUser);
 router.delete("/users/:userId", authenticateToken, checkAdmin, adminController.deleteUser);
+
+// Account-deletion requests (Google Play requirement): the Super Admin reviews, then deletes the account above.
+router.get("/deletion-requests", ...superAdminOnly, accountDeletionController.listRequests);
+router.patch("/deletion-requests/:id", ...superAdminOnly, accountDeletionController.updateRequest);
 
 /**
  * @swagger
