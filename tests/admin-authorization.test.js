@@ -63,6 +63,9 @@ const SUPER_ADMIN_ONLY = [
   ["get", "/audit-log"],
   ["get", "/settings/session"],
   ["patch", "/settings/session"],
+  // Account deletion requests can come from any school; only the Super Admin reviews them.
+  ["get", "/deletion-requests"],
+  ["patch", "/deletion-requests/:id"],
 ];
 
 /**
