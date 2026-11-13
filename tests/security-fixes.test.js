@@ -249,6 +249,18 @@ test("login validates input and handles an account with no password set", async 
   assert.equal(res.body.error, undefined);
 });
 
+test("login looks up the email without surrounding spaces", async () => {
+  let lookedUp;
+  User.findOne = async ({ where }) => {
+    lookedUp = where.email;
+    return null;
+  };
+  const res = makeResponse();
+  await login({ body: { email: "  reviewer@example.com \n", password: "pw123456" } }, res);
+  assert.equal(lookedUp, "reviewer@example.com");
+  assert.equal(res.statusCode, 401);
+});
+
 test("a malformed or forged bearer token is 401 TOKEN_INVALID", async () => {
   const previousSecret = process.env.JWT_SECRET;
   process.env.JWT_SECRET = "security-fixes-secret";

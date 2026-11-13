@@ -56,7 +56,10 @@ const isNonEmptyString = (value: unknown): value is string =>
   typeof value === "string" && value.trim().length > 0;
 
 const login = async (req: Request, res: Response) => {
-  const { email, password } = req.body ?? {};
+  const { email: rawEmail, password } = req.body ?? {};
+  // Pasted credentials often carry a stray space around the email (the Play
+  // reviewer path). The password is left exactly as typed.
+  const email = typeof rawEmail === "string" ? rawEmail.trim() : rawEmail;
 
   if (!isNonEmptyString(email) || !isNonEmptyString(password)) {
     return res.status(400).json({
